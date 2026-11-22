@@ -1,102 +1,168 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
 
-const $ = (s) => document.querySelector(s);
-const splash = $('#auth-screen');
-const shell = $('#app-shell');
-const message = $('#auth-message');
-const loginButton = $('#google-login');
-const logoutButton = $('#google-logout');
-const account = $('#account-details');
+const el = id => document.getElementById(id);
+const loginButton = el('google-login');
+const logoutButton = el('google-logout');
+const screen = el('auth-screen');
+const shell = el('app-shell');
+const status = el('auth-message');
+const account = el('account-details');
+let supabase = null;
+let verificationVersion = 0;
+let scheduledCheck = null;
+let signingOut = false;
 
-const configured = Boolean(
-  /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(SUPABASE_URL) &&
-  /^(sb_publishable_|eyJ)/.test(SUPABASE_PUBLISHABLE_KEY)
-);
-let client = null;
-let checkSerial = 0;
-
-function alertUser(text, kind = 'info') {
-  message.textContent = text;
-  message.dataset.kind = kind;
-  message.hidden = false;
+function tell(text, kind = 'info') {
+  status.textContent = text;
+  status.dataset.kind = kind;
+  status.hidden = false;
 }
-function showGate() {
+function locked() {
+  screen.hidden = false;
   shell.hidden = true;
-  splash.hidden = false;
   logoutButton.hidden = true;
   account.textContent = '';
 }
-function showSystem(user) {
-  splash.hidden = true;
+function unlocked(user) {
   shell.hidden = false;
-  account.textContent = user.email || 'Usuário autorizado';
+  screen.hidden = true;
+  account.textContent = user.email || 'Conta autorizada';
   logoutButton.hidden = false;
 }
-async function verifySession() {
-  const serial = ++checkSerial;
-  showGate();
-  if (!client) {
-    loginButton.disabled = true;
-    alertUser('A autenticação ainda precisa ser configurada. Conecte um projeto Supabase independente e cadastre os três e-mails autorizados.', 'warning');
-    return;
+function explain(error) {
+  const message = error?.message || String(error || 'Erro desconhecido');
+  if (/redirect|callback|invalid.*client|oauth/i.test(message)) {
+    return 'Erro de configuração do Google OAuth: ' + message;
   }
-  loginButton.disabled = false;
+  return message;
+}
+function scheduleVerification() {
+  if (signingOut) return;
+  clearTimeout(scheduledCheck);
+  scheduledCheck = setTimeout(() => { void verify(); }, 80);
+}
+async function verify() {
+  const version = ++verificationVersion;
+  locked();
+  loginButton.disabled = true;
+  tell('Verificando acesso...');
   try {
-    const { data: { user }, error: userError } = await client.auth.getUser();
-    if (serial !== checkSerial) return;
-    if (userError || !user) {
-      alertUser('Entre com uma das três contas Google autorizadas para continuar.');
-      return;
-    }
-    loginButton.disabled = true;
-    alertUser('Conferindo autorização da conta no banco de dados...');
-    const { data: allowed, error } = await client.rpc('is_authorized_user');
-    if (serial !== checkSerial) return;
-    if (error || allowed !== true) {
-      await client.auth.signOut();
-      if (serial !== checkSerial) return;
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (version !== verificationVersion || signingOut) return;
+    if (error) {
       loginButton.disabled = false;
-      alertUser('Acesso negado. Essa conta não está na lista autorizada ou a verificação de segurança ainda não foi instalada.', 'error');
+      tell('Falha ao verificar a sessão. ' + explain(error), 'error');
       return;
     }
-    showSystem(user);
-  } catch (_) {
-    if (serial !== checkSerial) return;
+    if (!user) {
+      loginButton.disabled = false;
+      tell('Use uma das três contas Google autorizadas.');
+      return;
+    }
+    tell('Conta Google confirmada. Validando autorização...');
+    const { data: authorized, error: authorizationError } = await supabase.rpc('is_authorized_user');
+    if (version !== verificationVersion || signingOut) return;
+    if (authorizationError) {
+      loginButton.disabled = false;
+      tell('Falha ao consultar a autorização no Supabase: ' + explain(authorizationError), 'error');
+      return;
+    }
+    if (authorized !== true) {
+      tell('Este e-mail não está autorizado. Entre com a conta cadastrada.', 'error');
+      signingOut = true;
+      await supabase.auth.signOut();
+      signingOut = false;
+      loginButton.disabled = false;
+      return;
+    }
+    unlocked(user);
+  } catch (err) {
+    if (version !== verificationVersion) return;
     loginButton.disabled = false;
-    alertUser('Não foi possível validar o acesso. Tente novamente em instantes.', 'error');
+    tell('Não foi possível validar o login. ' + explain(err), 'error');
   }
 }
-
-loginButton.addEventListener('click', async () => {
-  if (!client) return;
+async function start() {
+  locked();
   loginButton.disabled = true;
-  alertUser('Redirecionando para o Google...');
-  const redirectTo = location.origin + location.pathname;
-  const { error } = await client.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo }
-  });
-  if (error) {
+
+  // Carregamento assíncrono permite exibir um erro em vez de um botão sem resposta.
+  try {
+    const validUrl = /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(SUPABASE_URL);
+    const validKey = /^(sb_publishable_|eyJ)/.test(SUPABASE_PUBLISHABLE_KEY);
+    if (!validUrl || !validKey) {
+      tell('O Supabase ainda não foi configurado no arquivo config.js.', 'error');
+      return;
+    }
+    tell('Preparando conexão segura com o Google...');
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.49.1');
+    supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true, flowType: 'pkce' }
+    });
+
+    const query = new URLSearchParams(location.search);
+    const hashQuery = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const oauthError = query.get('error_description') || hashQuery.get('error_description');
+    if (oauthError) {
+      tell('O Google não concluiu o login: ' + oauthError, 'error');
+      history.replaceState(null, '', location.pathname);
+    }
+    supabase.auth.onAuthStateChange(event => {
+      // Nunca aguardar chamadas ao Supabase dentro deste callback.
+      if (event === 'SIGNED_OUT') {
+        ++verificationVersion;
+        locked();
+        loginButton.disabled = false;
+      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        scheduleVerification();
+      }
+    });
     loginButton.disabled = false;
-    alertUser('Não foi possível iniciar o login: ' + error.message, 'error');
+    scheduleVerification();
+  } catch (err) {
+    loginButton.disabled = true;
+    tell('O módulo de autenticação não carregou. Verifique a internet ou bloqueadores do navegador e atualize a página. Detalhes: ' + explain(err), 'error');
+  }
+}
+loginButton.addEventListener('click', async () => {
+  if (!supabase) {
+    tell('A conexão com o Supabase não está pronta.', 'error');
+    return;
+  }
+  loginButton.disabled = true;
+  tell('Abrindo a página segura de login do Google...');
+  try {
+    const redirectTo = location.origin + location.pathname;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo, queryParams: { prompt: 'select_account' } }
+    });
+    if (error) throw error;
+    // O navegador será redirecionado pelo Supabase.
+    setTimeout(() => {
+      if (!screen.hidden) {
+        loginButton.disabled = false;
+        tell('Se não abriu o Google, veja se o navegador bloqueou o redirecionamento e tente novamente.', 'warning');
+      }
+    }, 7000);
+  } catch (err) {
+    loginButton.disabled = false;
+    tell('Não foi possível iniciar o login Google: ' + explain(err), 'error');
   }
 });
 logoutButton.addEventListener('click', async () => {
-  ++checkSerial;
-  showGate();
-  if (client) await client.auth.signOut();
-  loginButton.disabled = !configured;
-  alertUser('Você saiu do sistema.');
+  ++verificationVersion;
+  clearTimeout(scheduledCheck);
+  signingOut = true;
+  locked();
+  try {
+    if (supabase) await supabase.auth.signOut();
+    loginButton.disabled = false;
+    tell('Sessão encerrada. Entre novamente para continuar.');
+  } catch (err) {
+    tell('Não foi possível encerrar a sessão: ' + explain(err), 'error');
+  } finally {
+    signingOut = false;
+  }
 });
-
-if (configured) {
-  client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true }
-  });
-  client.auth.onAuthStateChange((_event) => {
-    // A função assíncrona roda fora do callback, evitando bloqueios na biblioteca Auth.
-    queueMicrotask(() => verifySession());
-  });
-}
-verifySession();
+void start();
