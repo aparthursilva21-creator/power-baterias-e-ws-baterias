@@ -22,6 +22,7 @@ function locked() {
   shell.hidden = true;
   logoutButton.hidden = true;
   account.textContent = '';
+  if (window.pbwsSession) { window.pbwsSession = null; window.dispatchEvent(new Event('pbws:logout')); }
 }
 function unlocked(user) {
   shell.hidden = false;
@@ -75,7 +76,22 @@ async function verify() {
       loginButton.disabled = false;
       return;
     }
+    // Permissões são confirmadas no banco, nunca inferidas a partir do e-mail.
+    const { data: appRole, error: roleError } = await supabase.rpc('current_app_role');
+    if (version !== verificationVersion || signingOut) return;
+    if (roleError && !/PGRST202|could not find the function|does not exist|schema cache/i.test(roleError.message || '')) {
+      loginButton.disabled = false;
+      tell('Falha ao validar permissões: ' + explain(roleError), 'error');
+      return;
+    }
+    if (!roleError && !['admin','power','ws'].includes(appRole)) {
+      loginButton.disabled = false;
+      tell('Sua conta não tem um perfil empresarial ativo.', 'error');
+      return;
+    }
     unlocked(user);
+    window.pbwsSession = { client: supabase, user, role: roleError ? 'setup' : appRole };
+    window.dispatchEvent(new CustomEvent('pbws:ready', { detail: window.pbwsSession }));
   } catch (err) {
     if (version !== verificationVersion) return;
     loginButton.disabled = false;
@@ -114,6 +130,7 @@ async function start() {
         locked();
         loginButton.disabled = false;
       } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (event === 'TOKEN_REFRESHED' && window.pbwsSession) return;
         scheduleVerification();
       }
     });
