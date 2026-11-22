@@ -22,3 +22,42 @@ jobs:
         run: node --check app.js
       - name: Executar testes de estrutura
         run: node --test tests/smoke.test.mjs
+
+  database:
+    name: Verificar financeiro em PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pbws_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pbws_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGDATABASE: pbws_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar schema fake do Auth para testes
+        run: psql -v ON_ERROR_STOP=1 -f tests/postgres_stub.sql
+      - name: Executar controle de acesso
+        run: psql -v ON_ERROR_STOP=1 -f supabase/setup-auth.sql
+      - name: Instalar schema de operação
+        run: psql -v ON_ERROR_STOP=1 -f supabase/002_used_batteries_schema.sql
+      - name: Instalar funções de vendas e acertos
+        run: psql -v ON_ERROR_STOP=1 -f supabase/003_used_batteries_operations.sql
+      - name: Instalar acertos em lote, despesas e relatórios
+        run: psql -v ON_ERROR_STOP=1 -f supabase/004_batches_expenses_reports.sql
+      - name: Instalar consulta de equipe
+        run: psql -v ON_ERROR_STOP=1 -f supabase/005_staff_realtime.sql
+      - name: Testar fluxo empresarial
+        run: psql -v ON_ERROR_STOP=1 -f tests/integration.sql
