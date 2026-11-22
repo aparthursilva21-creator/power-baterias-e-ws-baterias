@@ -29,7 +29,7 @@ begin
      or p_model is null or btrim(p_model) = '' or char_length(p_model) > 120 then
     raise exception 'Marca e modelo são obrigatórios e devem ser curtos';
   end if;
-  if p_transfer_price_cents is null or p_transfer_price_cents < 0
+  if p_transfer_price_cents is null or p_transfer_price_cents <= 0
      or p_asking_price_cents is null or p_asking_price_cents < 0 then
     raise exception 'Os preços informados são inválidos';
   end if;
@@ -77,7 +77,7 @@ begin
   if p_status not in ('received','restoring','available','discarded') or p_status is null then
     raise exception 'Situação inválida';
   end if;
-  if p_transfer_price_cents is null or p_transfer_price_cents < 0
+  if p_transfer_price_cents is null or p_transfer_price_cents <= 0
      or p_recovery_cost_cents is null or p_recovery_cost_cents < 0
      or p_asking_price_cents is null or p_asking_price_cents < 0 then
     raise exception 'Os valores não podem ser negativos';
@@ -257,8 +257,8 @@ begin
       v_event := 'payment_correction';
 
     when 'adjust_owed' then
-      if p_amount_cents is null or p_amount_cents < 0 then
-        raise exception 'Informe o novo valor total do acerto';
+      if p_amount_cents is null or p_amount_cents <= 0 then
+        raise exception 'Informe um valor positivo; para dispensar use a ação waive';
       end if;
       if v_reason is null then raise exception 'Informe o motivo do ajuste'; end if;
       if p_amount_cents < v_old.paid_cents + v_old.waived_cents then
