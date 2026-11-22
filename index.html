@@ -6,8 +6,58 @@
 <style>
 :root{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:#edf4fd;background:#0b111a}*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}aside{width:248px;background:#111c29;border-right:1px solid #253348;padding:25px 17px;position:fixed;inset:0 auto 0 0}main{margin-left:248px;padding:30px;max-width:1600px}.brand{display:flex;align-items:center;gap:10px;margin-bottom:32px;font-size:19px;font-weight:900}.logo{padding:10px;border-radius:12px;background:#183e2e;color:#64edaa}.brand small{display:block;font-size:10px;color:#94a5b7;font-weight:500;letter-spacing:.6px}.nav{width:100%;display:flex;align-items:center;gap:10px;border:0;border-radius:10px;padding:14px 12px;text-align:left;background:transparent;color:#9eb0c3;margin:6px 0}.nav.active,.nav:hover{background:#1d3a30;color:#74f4b8}header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:26px}h1{font-size:28px;margin:0 0 8px}h2{font-size:19px;margin:0 0 18px}p{color:#9fafbf;margin:0}.tag{background:#23384a;color:#b1c9df;border-radius:100px;padding:8px 12px;font-size:12px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:24px}.card,.panel{background:#162230;border:1px solid #263749;border-radius:16px;padding:20px}.card span{font-size:12px;color:#9cadc0}.card strong{display:block;margin-top:12px;font-size:26px;color:#69edaa}.panel{margin-bottom:20px;overflow:auto}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}.btn{background:#42d999;border:0;border-radius:10px;padding:11px 16px;color:#062619;font-weight:800}.btn.secondary{background:#263a4d;color:#e4edf8}.btn.danger{background:#5a3038;color:#ffe7e7}.btn:disabled{opacity:.45;cursor:not-allowed}table{width:100%;border-collapse:collapse;min-width:650px}th,td{text-align:left;border-bottom:1px solid #2b394a;padding:14px 12px;font-size:13px}th{color:#92a8bc;font-size:12px;font-weight:600}td{color:#e3ebf3}.pill{font-size:11px;border-radius:30px;padding:6px 9px;background:#233f36;color:#71edac;white-space:nowrap}.pill.gray{background:#344154;color:#c8d1df}.pill.red{background:#4c2c36;color:#ffb1b8}.empty{text-align:center;padding:34px;color:#9eacc0}.filters{display:flex;gap:8px;flex-wrap:wrap}input,select{background:#101a26;border:1px solid #385068;border-radius:10px;color:white;padding:11px;width:100%;outline:none}input:focus,select:focus{border-color:#66e6ac}form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}label{font-size:12px;color:#afbece;display:grid;gap:6px}.wide{grid-column:1/-1}.modal{position:fixed;inset:0;background:#02070bd9;display:none;justify-content:center;align-items:center;padding:18px;z-index:10}.modal.open{display:flex}.dialog{background:#182534;border:1px solid #365064;border-radius:18px;max-width:780px;width:100%;max-height:90vh;overflow-y:auto;padding:22px}.dialog-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.dialog-head h2{margin:0}.notice{background:#192c39;border:1px solid #315166;border-radius:10px;padding:12px;color:#bdcedc;font-size:12px;margin:18px 0}.toast{position:fixed;bottom:22px;right:22px;background:#234b39;color:#d8ffe9;border-radius:12px;padding:15px;display:none;z-index:20}.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}.small{color:#aabacc;font-size:12px}.hamb{display:none}@media(max-width:1100px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){aside{position:static;width:auto;padding:14px;border-right:0;border-bottom:1px solid #293a4d}.brand{margin:0 0 12px}.links{display:flex;overflow:auto;gap:3px}.nav{white-space:nowrap;padding:10px}main{margin:0;padding:18px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:1fr}form{grid-template-columns:1fr 1fr}}@media(max-width:440px){.cards{grid-template-columns:1fr 1fr;gap:8px}.card{padding:13px}.card strong{font-size:20px}form{grid-template-columns:1fr}h1{font-size:23px}}
 </style>
+
+<style>
+[hidden]{display:none!important}
+#auth-screen{min-height:100vh;display:grid;grid-template-columns:1.1fr 0.9fr;background:#090f17;color:#f3f7fd;font-family:Inter,system-ui,Segoe UI,sans-serif}
+.auth-hero{position:relative;overflow:hidden;padding:clamp(35px,7vw,100px);display:flex;flex-direction:column;justify-content:space-between;background:radial-gradient(circle at 75% 33%,#1c5348 0%,#11272d 27%,#0b1420 67%);border-right:1px solid #273d4b}
+.auth-hero::before{content:"";position:absolute;right:-130px;top:24%;height:450px;width:450px;border:1px solid #468e7550;border-radius:50%;box-shadow:0 0 0 50px #3dc98c08,0 0 0 100px #3dc98c09;pointer-events:none}
+.auth-symbol{display:inline-flex;align-items:center;justify-content:center;background:#225c48;color:#7bf6b5;border-radius:15px;width:52px;height:52px;font-size:27px}
+.auth-eyebrow{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.07em;font-size:14px}
+.auth-headline{z-index:1;position:relative;margin:80px 0}
+.auth-headline h1{font-size:clamp(40px,5.5vw,78px);line-height:1.04;letter-spacing:-.055em;max-width:650px;margin:0 0 26px}
+.auth-headline h1 em{font-style:normal;color:#6eebb0}
+.auth-headline p{font-size:18px;line-height:1.65;max-width:490px;color:#b0c2cd}
+.auth-foot{font-size:13px;color:#9eb2c1;z-index:1}
+.auth-side{display:flex;align-items:center;justify-content:center;padding:30px}
+.auth-card{width:100%;max-width:420px}
+.auth-bubble{height:54px;width:54px;border-radius:17px;display:grid;place-items:center;background:#1b3d35;color:#68f0ab;font-size:24px;margin-bottom:27px}
+.auth-card h2{font-size:34px;letter-spacing:-.04em;margin:0 0 12px}
+.auth-card>p{line-height:1.6;margin-bottom:35px}
+#google-login{width:100%;display:flex;align-items:center;justify-content:center;gap:13px;padding:16px 20px;background:#f6f8fb;color:#1b2430;border:1px solid #fff;font-weight:750;font-size:15px;border-radius:13px;box-shadow:0 10px 28px #0004}
+#google-login:hover{background:#e7f4ed}
+#google-login:disabled{opacity:.55;cursor:not-allowed}
+.google-logo{font-size:22px;font-weight:800;color:#4285f4}
+#auth-message{padding:14px;margin-top:22px;color:#a9c2d2;background:#142432;border:1px solid #274256;border-radius:12px;font-size:13px;line-height:1.5}
+#auth-message[data-kind="error"]{color:#ffc0c4;background:#3d2029;border-color:#6a323d}
+#auth-message[data-kind="warning"]{color:#f5d8a1;background:#30291c;border-color:#554529}
+.auth-privacy{display:flex;gap:9px;align-items:start;margin-top:26px;color:#91a8b9;font-size:12px;line-height:1.6}
+.auth-privacy span{color:#75edb7}
+#account-bar{position:fixed;bottom:16px;left:17px;width:214px;z-index:3;padding:12px;background:#1a3040;border:1px solid #2c4b58;border-radius:12px;font-size:12px;color:#b5cbd5;overflow-wrap:anywhere}
+#account-bar #account-details{display:block;margin:7px 0;color:#e3f7ef}
+#google-logout{border:1px solid #426270;background:#223c49;color:#e3f7ef;padding:8px;border-radius:8px}
+@media(max-width:880px){#auth-screen{grid-template-columns:1fr}.auth-hero{min-height:260px;padding:28px}.auth-headline{margin:40px 0 20px}.auth-headline h1{font-size:38px}.auth-headline p{font-size:15px}.auth-side{padding:35px 22px 55px}.auth-card{max-width:480px}#account-bar{position:static;width:auto;margin:8px 15px}}
+</style>
 </head>
 <body>
+
+<section id="auth-screen" aria-label="Acesso ao sistema">
+  <div class="auth-hero">
+    <div class="auth-eyebrow"><span class="auth-symbol">▣</span><span>POWER BATERIAS <span style="color:#64eca9">×</span> WS BATERIAS</span></div>
+    <div class="auth-headline"><h1>Uma operação.<br><em>Mais controle.</em><br>Mais resultado.</h1><p>Gestão inteligente das baterias usadas, da recuperação até a venda. Um espaço exclusivo para a parceria Power × WS.</p></div>
+    <div class="auth-foot">© 2026 POWER × WS · Plataforma de gestão</div>
+  </div>
+  <div class="auth-side"><div class="auth-card">
+    <div class="auth-bubble">🔒</div>
+    <div style="font-size:12px;letter-spacing:.14em;color:#66e9a5;font-weight:800;margin-bottom:12px">ACESSO RESTRITO</div>
+    <h2>Bem-vindo de volta.</h2>
+    <p>Entre com a conta Google autorizada para acessar o painel de gestão.</p>
+    <button id="google-login" type="button"><span class="google-logo">G</span> Continuar com o Google</button>
+    <div id="auth-message" role="status">Verificando autenticação...</div>
+    <div class="auth-privacy"><span>◆</span> Somente as contas cadastradas pela administração podem acessar o sistema.</div>
+  </div></div>
+</section>
+<div id="app-shell" hidden>
 <aside><div class="brand"><span class="logo">▣</span><div>POWER <span style="color:#66eaa9">× WS</span><small>GESTÃO DE BATERIAS USADAS</small></div></div><nav class="links" id="nav"></nav><div class="notice">⚠️ DEMONSTRAÇÃO LOCAL<br>Dados armazenados apenas neste navegador. Não use dados reais nesta versão.</div></aside>
 <main><header><div><h1 id="heading">Visão geral</h1><p id="subtitle">Acompanhe a operação de baterias usadas</p></div><span class="tag">● Protótipo v1.0</span></header><section id="view"></section></main>
 <div class="modal" id="modal"><div class="dialog"><div class="dialog-head"><h2 id="modalTitle"></h2><button class="btn secondary" onclick="closeModal()">Fechar ✕</button></div><div id="modalBody"></div></div></div><div class="toast" id="toast"></div>
@@ -49,5 +99,8 @@ function render(){document.querySelector('#nav').innerHTML=sections.map(s=>'<but
 render();
 })();
 </script>
+<div id="account-bar">Conectado como <strong id="account-details"></strong><button id="google-logout" type="button">Sair da conta</button></div>
+</div>
+<script type="module" src="./auth.js"></script>
 </body>
 </html>
