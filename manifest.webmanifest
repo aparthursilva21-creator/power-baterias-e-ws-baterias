@@ -1,0 +1,21 @@
+{
+  "id": "/power-baterias-e-ws-baterias/",
+  "name": "Power Baterias × WS Baterias",
+  "short_name": "Power × WS",
+  "description": "Gestão de baterias usadas, vendas, garantias e repasses entre empresas",
+  "lang": "pt-BR",
+  "start_url": "/power-baterias-e-ws-baterias/",
+  "scope": "/power-baterias-e-ws-baterias/",
+  "display": "standalone",
+  "background_color": "#070b10",
+  "theme_color": "#070b10",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./assets/app-icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}
