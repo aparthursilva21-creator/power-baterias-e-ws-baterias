@@ -38,6 +38,12 @@
 #google-logout{border:1px solid #426270;background:#223c49;color:#e3f7ef;padding:8px;border-radius:8px}
 @media(max-width:880px){#auth-screen{grid-template-columns:1fr}.auth-hero{min-height:260px;padding:28px}.auth-headline{margin:40px 0 20px}.auth-headline h1{font-size:38px}.auth-headline p{font-size:15px}.auth-side{padding:35px 22px 55px}.auth-card{max-width:480px}#account-bar{position:static;width:auto;margin:8px 15px}}
 </style>
+<link rel="stylesheet" href="./premium.css">
+
+<style>
+#app-shell .card{background-image:radial-gradient(230px circle at var(--mx,-200px) var(--my,-200px),rgba(185,255,69,.075),transparent 75%),linear-gradient(145deg,rgba(21,32,39,.91),rgba(11,20,27,.94))!important}
+#view.premium-enter{animation:slide-up .48s cubic-bezier(.16,1,.3,1)}
+</style>
 </head>
 <body>
 
@@ -102,5 +108,6 @@ render();
 <div id="account-bar">Conectado como <strong id="account-details"></strong><button id="google-logout" type="button">Sair da conta</button></div>
 </div>
 <script type="module" src="./auth.js"></script>
+<script defer src="./premium.js"></script>
 </body>
 </html>
