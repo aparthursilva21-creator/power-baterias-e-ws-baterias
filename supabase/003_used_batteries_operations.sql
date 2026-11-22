@@ -13,7 +13,8 @@ create or replace function public.register_used_battery(
   p_asking_price_cents bigint,
   p_amperage_ah integer default null,
   p_serial_number text default null,
-  p_notes text default null
+  p_notes text default null,
+  p_recovery_cost_cents bigint default 0
 ) returns uuid
 language plpgsql
 security definer
@@ -30,17 +31,18 @@ begin
     raise exception 'Marca e modelo são obrigatórios e devem ser curtos';
   end if;
   if p_transfer_price_cents is null or p_transfer_price_cents <= 0
+     or p_recovery_cost_cents is null or p_recovery_cost_cents < 0
      or p_asking_price_cents is null or p_asking_price_cents < 0 then
     raise exception 'Os preços informados são inválidos';
   end if;
   insert into public.used_batteries (
     code, brand, model, amperage_ah, serial_number,
-    transfer_price_cents, asking_price_cents, notes, created_by
+    transfer_price_cents, recovery_cost_cents, asking_price_cents, notes, created_by
   )
   values (
     'WS-' || lpad(nextval('public.used_battery_code_seq')::text, 6, '0'),
     btrim(p_brand), btrim(p_model), p_amperage_ah, nullif(btrim(p_serial_number), ''),
-    p_transfer_price_cents, p_asking_price_cents, p_notes, auth.uid()
+    p_transfer_price_cents, p_recovery_cost_cents, p_asking_price_cents, p_notes, auth.uid()
   )
   returning id into v_id;
 
@@ -308,12 +310,12 @@ end;
 $func$;
 
 -- Fechar as permissões: chamadas REST RPC só para sessões autenticadas.
-revoke all on function public.register_used_battery(text,text,bigint,bigint,integer,text,text) from public, anon;
+revoke all on function public.register_used_battery(text,text,bigint,bigint,integer,text,text,bigint) from public, anon;
 revoke all on function public.update_used_battery(uuid,text,bigint,bigint,bigint,text) from public, anon;
 revoke all on function public.register_used_battery_sale(uuid,text,bigint,text,integer,text,text,text) from public, anon;
 revoke all on function public.manage_used_settlement(uuid,text,bigint,text) from public, anon;
 
-grant execute on function public.register_used_battery(text,text,bigint,bigint,integer,text,text) to authenticated;
+grant execute on function public.register_used_battery(text,text,bigint,bigint,integer,text,text,bigint) to authenticated;
 grant execute on function public.update_used_battery(uuid,text,bigint,bigint,bigint,text) to authenticated;
 grant execute on function public.register_used_battery_sale(uuid,text,bigint,text,integer,text,text,text) to authenticated;
 grant execute on function public.manage_used_settlement(uuid,text,bigint,text) to authenticated;
