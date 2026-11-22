@@ -1,59 +1,71 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import {readFileSync, existsSync} from 'node:fs';
 
-const root = new URL('../', import.meta.url);
-const read = path => readFileSync(new URL(path, root), 'utf8');
+const root=new URL('../',import.meta.url);
+const read=path=>readFileSync(new URL(path,root),'utf8');
 
-test('estrutura do projeto e arquivos importantes', () => {
-  for (const p of ['index.html', 'auth.js', 'config.js', 'login-clean.css', 'mobile.css', 'manifest.webmanifest', 'assets/app-icon.svg']) {
-    assert.ok(existsSync(new URL(p, root)), `Arquivo ausente: ${p}`);
-  }
+test('arquivos essenciais presentes',()=>{
+ for(const path of ['index.html','auth.js','app.js','app.css','config.js','manifest.webmanifest',
+ 'supabase/002_used_batteries_schema.sql','supabase/003_used_batteries_operations.sql',
+ 'supabase/004_batches_expenses_reports.sql','supabase/005_staff_realtime.sql']){
+  assert.ok(existsSync(new URL(path,root)), 'Ausente: '+path);
+ }
 });
 
-test('PWA tem escopo correto de GitHub Pages', () => {
-  const manifest = JSON.parse(read('manifest.webmanifest'));
-  const scope = '/power-baterias-e-ws-baterias/';
-  assert.equal(manifest.start_url, scope);
-  assert.equal(manifest.scope, scope);
-  assert.equal(manifest.display, 'standalone');
-  assert.ok(manifest.icons.some(i => i.src.startsWith('./assets/')));
+test('entrada com Google mantém painel protegido',()=>{
+ const html=read('index.html'), auth=read('auth.js');
+ assert.match(html,/id="auth-screen"/);
+ assert.match(html,/id="app-shell" hidden/);
+ assert.match(html,/id="google-login"/);
+ assert.match(html,/app\.js\?v=/);
+ assert.match(html,/app\.css\?v=/);
+ assert.match(auth,/persistSession: true/);
+ assert.match(auth,/autoRefreshToken: true/);
+ assert.match(auth,/is_authorized_user/);
+ assert.match(auth,/current_app_role/);
+ assert.match(auth,/pbws:ready/);
+ const cfg=read('config.js').replace(/^\/\/.*$/gm,'');
+ assert.doesNotMatch(cfg,/(?:sb_secret_[\w-]{12,}|service_role\s*=)/i);
 });
 
-test('login protegendo acesso ao painel, sem expor chave secreta', () => {
-  const html = read('index.html');
-  const auth = read('auth.js');
-  const config = read('config.js');
-  assert.match(html, /id="auth-screen"/);
-  assert.match(html, /id="app-shell" hidden/);
-  assert.match(html, /id="google-login"/);
-  assert.match(html, /auth\.js\?v=/);
-  assert.match(auth, /auth\.getUser\(/);
-  assert.match(auth, /rpc\('is_authorized_user'\)/);
-  assert.match(auth, /signInWithOAuth\(/);
-  assert.match(auth, /flowType: 'pkce'/);
-  // Verifica credenciais em declarações reais, sem penalizar comentários de orientação.
-  assert.doesNotMatch(config, /\b(?:const|let|var)\s+[A-Z_]*(?:SECRET|SERVICE_ROLE)[A-Z_]*\s*=/i);
-  assert.doesNotMatch(config, /sb_secret_[A-Za-z0-9_-]{12,}/i);
+test('aplicativo real usa banco remoto, não localStorage',()=>{
+ const js=read('app.js');
+ assert.match(js,/from\('used_battery_sales'\)/);
+ assert.match(js,/from\('used_battery_settlements'\)/);
+ assert.match(js,/register_used_battery_sale/);
+ assert.match(js,/settle_used_batteries_batch/);
+ assert.match(js,/register_ws_expense/);
+ assert.match(js,/get_power_ws_monthly_report/);
+ assert.match(js,/get_power_ws_team/);
+ assert.match(js,/BR_TIMEZONE = 'America\/Sao_Paulo'/);
+ assert.doesNotMatch(js,/localStorage|sessionStorage/);
+ assert.match(js,/postgres_changes/);
 });
 
-test('layout mobile incluído e navegação por toque', () => {
-  const html = read('index.html');
-  const css = read('mobile.css');
-  assert.match(html, /rel="manifest"/);
-  assert.match(html, /mobile\.css/);
-  assert.match(html, /nav-symbol/);
-  assert.match(css, /max-width:880px/);
-  assert.match(css, /safe-area-inset-bottom/);
-  assert.match(css, /min-height:44px/);
+test('migrações contêm controle de acesso e transações financeiras',()=>{
+ const schema=read('supabase/002_used_batteries_schema.sql');
+ const ops=read('supabase/003_used_batteries_operations.sql');
+ const batch=read('supabase/004_batches_expenses_reports.sql');
+ assert.match(schema,/enable row level security/i);
+ assert.match(schema,/used_battery_settlements/);
+ assert.match(ops,/for update/);
+ assert.match(ops,/register_used_battery_sale/);
+ assert.match(ops,/auth\.uid\(\)/);
+ assert.match(batch,/settle_used_batteries_batch/);
+ assert.match(batch,/used_settlement_batches/);
+ assert.match(batch,/used_settlement_events/);
+ assert.match(batch,/get_power_ws_monthly_report/);
 });
 
-test('javascript embutido da interface é sintaticamente válido', () => {
-  const html = read('index.html');
-  const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
-  assert.ok(inline.length > 0, 'Script embutido ausente');
-  for (const [, script] of inline) {
-    assert.doesNotThrow(() => new Function(script));
-  }
+test('PWA apto para uso em Android e iPhone via navegador',()=>{
+ const html=read('index.html');
+ const manifest=JSON.parse(read('manifest.webmanifest'));
+ const css=read('app.css');
+ assert.equal(manifest.scope,'/power-baterias-e-ws-baterias/');
+ assert.equal(manifest.display,'standalone');
+ assert.match(html,/apple-mobile-web-app-capable/);
+ assert.match(html,/bottom-nav/);
+ assert.match(css,/max-width:850px/);
+ assert.match(css,/safe-area-inset-bottom/);
 });
