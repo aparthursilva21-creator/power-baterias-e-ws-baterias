@@ -44,13 +44,28 @@
 #app-shell .card{background-image:radial-gradient(230px circle at var(--mx,-200px) var(--my,-200px),rgba(185,255,69,.075),transparent 75%),linear-gradient(145deg,rgba(21,32,39,.91),rgba(11,20,27,.94))!important}
 #view.premium-enter{animation:slide-up .48s cubic-bezier(.16,1,.3,1)}
 </style>
+<link rel="stylesheet" href="./brand.css">
 </head>
 <body>
 
 <section id="auth-screen" aria-label="Acesso ao sistema">
   <div class="auth-hero">
-    <div class="auth-eyebrow"><span class="auth-symbol">▣</span><span>POWER BATERIAS <span style="color:#64eca9">×</span> WS BATERIAS</span></div>
-    <div class="auth-headline"><h1>Uma operação.<br><em>Mais controle.</em><br>Mais resultado.</h1><p>Gestão inteligente das baterias usadas, da recuperação até a venda. Um espaço exclusivo para a parceria Power × WS.</p></div>
+    <div class="auth-brand-strip">
+      <div class="auth-power-wordmark" aria-label="Heliar Power Baterias"><span class="heliar-name">HELIAR</span><span class="heliar-caption">POWER BATERIAS</span></div>
+      <div class="auth-brand-divider" aria-hidden="true"></div>
+      <img src="./assets/ws-baterias.svg" class="auth-ws-brand" alt="WS Baterias" />
+    </div>
+    <div class="auth-headline">
+      <div class="auth-tagline">Tecnologia para quem move negócios</div>
+      <h1>Uma parceria.<br><em>Controle total.</em><br>Mais resultado.</h1>
+      <p>Da bateria recebida à última parcela da venda. Tudo organizado para o dia a dia da Power Baterias e da WS Baterias.</p>
+      <div class="auth-feature-grid" aria-label="Módulos disponíveis">
+        <div class="auth-feature"><span>▣</span> Estoque inteligente</div>
+        <div class="auth-feature"><span>↗</span> Controle de vendas</div>
+        <div class="auth-feature"><span>◇</span> Garantias e histórico</div>
+        <div class="auth-feature"><span>↔</span> Acertos entre empresas</div>
+      </div>
+    </div>
     <div class="auth-foot">© 2026 POWER × WS · Plataforma de gestão</div>
   </div>
   <div class="auth-side"><div class="auth-card">
