@@ -145,10 +145,11 @@ function syncSoon(){
 }
 window.addEventListener('pbws:ready',e=>void boot(e.detail));
 window.addEventListener('pbws:logout',()=>{
+  const oldApi=api;
   api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
-  if(liveChannel && api)void api.removeChannel(liveChannel);
+  if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
   liveChannel=null;closeModal();
 });
 if(window.pbwsSession)void boot(window.pbwsSession);
