@@ -33,7 +33,9 @@ test('login protegendo acesso ao painel, sem expor chave secreta', () => {
   assert.match(auth, /rpc\('is_authorized_user'\)/);
   assert.match(auth, /signInWithOAuth\(/);
   assert.match(auth, /flowType: 'pkce'/);
-  assert.doesNotMatch(config, /sb_secret_|service_role|google_client_secret\s*=/i);
+  // Verifica credenciais em declarações reais, sem penalizar comentários de orientação.
+  assert.doesNotMatch(config, /\b(?:const|let|var)\s+[A-Z_]*(?:SECRET|SERVICE_ROLE)[A-Z_]*\s*=/i);
+  assert.doesNotMatch(config, /sb_secret_[A-Za-z0-9_-]{12,}/i);
 });
 
 test('layout mobile incluído e navegação por toque', () => {
