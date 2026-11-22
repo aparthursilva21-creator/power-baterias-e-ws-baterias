@@ -1,0 +1,23 @@
+/* Revisão clean — entrada intencionalmente simples, com transições discretas. */
+#auth-screen .auth-feature-grid{display:none!important}
+#auth-screen .auth-headline{margin:clamp(26px,4vh,52px) 0 0!important}
+#auth-screen .auth-headline h1{font-size:clamp(36px,3.3vw,59px)!important;letter-spacing:-.05em!important;max-width:770px}
+#auth-screen .auth-headline p{max-width:560px;font-size:clamp(14px,1.15vw,17px)!important;margin-top:16px}
+#auth-screen .auth-photo-wrap{margin-top:35px;max-height:360px;height:clamp(200px,31vh,360px);border-radius:12px;filter:saturate(.76)}
+#auth-screen .auth-photo-wrap img{object-position:center 52%}
+#auth-screen .auth-power-wordmark .heliar-name:before{content:none!important;display:none!important}
+#auth-screen .auth-power-wordmark .heliar-name{font-style:normal!important;letter-spacing:-.045em!important;text-shadow:none!important}
+#auth-screen .auth-power-wordmark .heliar-caption{letter-spacing:.1em}
+#auth-screen .auth-ws-brand{filter:none!important}
+#auth-screen .auth-hero:before{opacity:.18!important;animation:none!important}
+#auth-screen .auth-card{border-color:rgba(106,248,69,.3)!important;box-shadow:0 0 45px rgba(59,216,45,.08),0 24px 65px rgba(0,0,0,.26)!important}
+#auth-screen .auth-card:after{opacity:.45!important}
+#auth-screen #google-login{border:1px solid #81e969!important;box-shadow:0 0 16px rgba(84,240,56,.12)!important}
+#auth-screen #google-login:hover:not(:disabled){box-shadow:0 0 25px rgba(84,240,56,.3)!important}
+#auth-screen .auth-bubble{font-size:0!important}
+#auth-screen .auth-bubble:before{content:"";width:27px;height:31px;border:2px solid #a8fb8a;border-radius:6px;display:block;box-shadow:inset 0 0 0 6px #0e2515}
+#auth-screen .auth-bubble:after{content:"";position:absolute;width:12px;height:8px;transform:translateY(-19px);border:2px solid #a8fb8a;border-bottom:0;border-radius:8px 8px 0 0}
+#auth-message[data-kind="error"]{color:#ffcbcc!important;border-color:#af5665!important}
+#auth-message[data-kind="warning"]{color:#ffe2aa!important}
+@media(max-width:880px){#auth-screen .auth-headline{margin:30px 0 0!important}#auth-screen .auth-photo-wrap{height:210px;margin-top:20px}#auth-screen .auth-card{min-height:360px}}
+@media(prefers-reduced-motion:reduce){#auth-screen .auth-photo-wrap,#auth-screen .auth-card{animation:none!important}}
