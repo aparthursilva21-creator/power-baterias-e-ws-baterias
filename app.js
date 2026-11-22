@@ -1,0 +1,518 @@
+/* Power Baterias × WS Baterias
+   Operação remota: Supabase Auth + RLS + funções SQL transacionais.
+   Sem armazenamento local para vendas, estoque ou dinheiro.
+*/
+const $ = (s, root = document) => root.querySelector(s);
+const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+const BR_TIMEZONE = 'America/Sao_Paulo';
+const MENU = [
+  ['dashboard', '◫', 'Início'],
+  ['batteries', '▤', 'Baterias'],
+  ['sales', '▣', 'Vendas'],
+  ['settlements', '⇄', 'Acertos'],
+  ['expenses', '◈', 'Despesas'],
+  ['reports', '▥', 'Relatórios'],
+  ['warranties', '♢', 'Garantias'],
+  ['activity', '◷', 'Histórico']
+];
+const CATEGORIES = { gasoline: 'Gasolina', delivery: 'Entregas', recovery_parts: 'Peças de recuperação', materials: 'Materiais', other: 'Outros' };
+const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Transferência', other: 'Outro' };
+const STATUS = { received: 'Recebida', restoring: 'Em recuperação', available: 'Disponível', sold: 'Vendida', discarded: 'Descartada' };
+const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
+let api = null, user = null, role = null, current = 'dashboard';
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [] };
+let refreshing = false, submitting = false, ready = false, timer = null, report = null;
+let selectedSettle = new Set();
+let reportMonth = new Intl.DateTimeFormat('en-CA', { timeZone: BR_TIMEZONE, year: 'numeric', month: '2-digit' }).format(new Date()).slice(0,7);
+const cents = value => {
+  const s = String(value ?? '').trim().replace(',', '.');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(s)) throw new Error('Informe um valor válido com no máximo duas casas decimais.');
+  const [a,b=''] = s.split('.');
+  const n = Number(a) * 100 + Number(b.padEnd(2,'0'));
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error('Valor fora do limite.');
+  return n;
+};
+const fromCents = c => (Number(c || 0)/100).toFixed(2);
+const brl = c => (Number(c || 0)/100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+const esc = s => String(s ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+const stamp = s => s ? new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s)) : '—';
+const dateBR = s => s ? new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s)) : '—';
+const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
+const canSell = () => role === 'ws' || role === 'admin';
+const canPay = () => role === 'power' || role === 'admin';
+const canExpense = () => role === 'ws' || role === 'admin';
+const shortId = id => String(id || '').slice(0,8);
+const staffName = id => {
+  const x = rows.staff.find(p => p.id === id);
+  return x ? (x.role === 'admin' ? 'Arthur' : x.role === 'power' ? 'Sandro' : 'Wanderson') : (id ? 'Conta ' + shortId(id) : '—');
+};
+const battery = id => rows.batteries.find(b => b.id === id);
+const saleFor = id => rows.sales.find(s => s.battery_id === id);
+const settleFor = id => rows.settlements.find(s => s.battery_id === id);
+const remaining = s => Math.max(0, Number(s.owed_cents) - Number(s.paid_cents) - Number(s.waived_cents));
+function settlingStatus(s) {
+  if (!s) return ['Sem venda','gray'];
+  if (remaining(s) === 0) return Number(s.waived_cents) > 0 ? ['Dispensado','green'] : ['Acertado','green'];
+  return Number(s.paid_cents) > 0 ? ['Parcial','yellow'] : ['Pendente','yellow'];
+}
+function statusBadge(label, cls = 'gray') { return '<span class="badge ' + cls + '">' + esc(label) + '</span>'; }
+function stat(label, value, highlight = false) { return '<div class="stat-card' + (highlight?' highlight':'') + '"><span class="stat-label">' + esc(label) + '</span><strong class="stat-value">' + esc(value) + '</strong></div>'; }
+function panel(title, content, trailing='') { return '<section class="panel"><div class="panel-top"><h3 class="panel-title">' + title + '</h3>' + trailing + '</div>' + content + '</section>'; }
+function tbl(headers, content) { return '<div class="table-scroll"><table><thead><tr>' + headers.map(h=>'<th>'+h+'</th>').join('') + '</tr></thead><tbody>' + (content || '<tr><td colspan="' + headers.length + '"><div class="empty">Nenhum registro encontrado.</div></td></tr>') + '</tbody></table></div>'; }
+function heading(title, desc, action='') { return '<div class="page-heading"><div><h2>' + title + '</h2><p>' + desc + '</p></div>' + action + '</div>'; }
+function button(label, act, cls='') { return '<button type="button" class="btn ' + cls + '" data-act="' + act + '">' + label + '</button>'; }
+function field(label,name,type='text',value='',extras='') {
+  return '<label class="field"><span>'+esc(label)+'</span><input name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+extras+'></label>';
+}
+function selectField(label,name,options,value,extra='') {
+  return '<label class="field"><span>'+esc(label)+'</span><select name="'+name+'" '+extra+'>'+options.map(o=>'<option value="'+esc(o[0])+'" '+(o[0]===value?'selected':'')+'>'+esc(o[1])+'</option>').join('')+'</select></label>';
+}
+let toastTimer;
+function toast(msg,kind='info') {
+  const el=$('#toast'); el.textContent=msg;el.dataset.kind=kind;el.hidden=false;
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>{el.hidden=true;},4500);
+}
+function explain(err) {
+  const m=String(err?.message || err || 'Erro inesperado');
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return 'Não foi possível conectar. Verifique a internet e tente novamente.';
+  if (/permission denied|row-level security|42501/i.test(m)) return 'A sua conta não tem permissão para esta operação.';
+  if (/does not exist|could not find the function|schema cache|PGRST202|42P01|42883/i.test(m)) return 'O banco ainda não recebeu todas as migrações. Execute os arquivos SQL 002, 003, 004 e 005 no Supabase.';
+  return m;
+}
+function modal(title, content, footer='') {
+  $('#dialog-title').textContent=title;
+  $('#dialog-content').innerHTML=content;
+  $('#dialog-footer').innerHTML=footer || '<button class="btn secondary" type="button" data-modal-close>Fechar</button>';
+  $('#modal-root').hidden=false;
+  document.body.style.overflow='hidden';
+  $('#modal-close').focus();
+}
+function closeModal() { $('#modal-root').hidden=true;document.body.style.overflow=''; }
+$('#modal-close').addEventListener('click',closeModal);
+$('#modal-root').addEventListener('click', e => {
+  if (e.target === $('#modal-root') || e.target.closest('[data-modal-close]')) closeModal();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal-root').hidden)closeModal();});
+function setBusy(value) {
+  submitting=value;
+  $$('.dialog button, .dialog input, .dialog select, .dialog textarea').forEach(el=>el.disabled=value);
+}
+async function runRpc(name, params, successMessage) {
+  if(submitting) return false;
+  setBusy(true);
+  try {
+    const { error } = await api.rpc(name,params);
+    if(error) throw error;
+    closeModal();
+    toast(successMessage);
+    await loadAll(true);
+    return true;
+  } catch(err) { toast(explain(err),'error'); return false; }
+  finally { setBusy(false); }
+}
+function nav() {
+  const visible = MENU.filter(x => x[0] !== 'expenses' || canExpense());
+  const html=visible.map(x=>'<button class="nav-action'+(x[0]===current?' active':'')+'" data-view="'+x[0]+'" type="button" '+(x[0]===current?'aria-current="page"':'')+'><span class="nav-symbol" aria-hidden="true">'+x[1]+'</span><span>'+x[2]+'</span></button>').join('');
+  $('#side-nav').innerHTML=html; $('#bottom-nav').innerHTML=html;
+}
+function setupError(msg) {
+  ready=false;
+  $('#app-main').innerHTML='<div class="page-stack">'+heading('Configuração necessária','Seu acesso Google está funcionando, mas o banco operacional ainda precisa ser preparado.')+
+  '<div class="note error"><b>Não é seguro registrar vendas reais agora.</b><br>'+esc(msg)+'</div>'+
+  panel('Ativar o banco no projeto novo','<div class="panel-body"><p class="muted">No Supabase SQL Editor, execute na ordem as migrações 002, 003, 004 e 005 deste repositório. Depois clique em Atualizar.</p><p><a href="https://github.com/aparthursilva21-creator/power-baterias-e-ws-baterias/tree/main/supabase" target="_blank" rel="noopener">Abrir arquivos SQL no GitHub</a></p>'+button('↻ Testar conexão novamente','refresh','')+'</div>')+'</div>';
+}
+async function boot(session) {
+  api=session.client;user=session.user;role=session.role;
+  $('#role-label').textContent=roleName(role);
+  $('#account-details').textContent=user.email || 'Conta autorizada';
+  nav();
+  await loadAll();
+  if(!timer) timer=setInterval(()=>{if(api&&document.visibilityState==='visible'&&ready&&!submitting)void loadAll(true);},20000);
+}
+window.addEventListener('pbws:ready',e=>void boot(e.detail));
+window.addEventListener('pbws:logout',()=>{
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[]};
+  selectedSettle.clear();if(timer)clearInterval(timer);timer=null;closeModal();
+});
+if(window.pbwsSession)void boot(window.pbwsSession);
+window.addEventListener('focus',()=>{if(api&&ready&&!refreshing)void loadAll(true);});
+async function loadAll(silent=false) {
+  if(!api||refreshing) return;
+  refreshing=true;
+  if(!silent) $('#app-main').innerHTML='<div class="loading"><span class="loader"></span> Carregando dados seguros...</div>';
+  const requests=[
+    ['batteries',api.from('used_batteries').select('*').order('created_at',{ascending:false})],
+    ['sales',api.from('used_battery_sales').select('*').order('sold_at',{ascending:false})],
+    ['settlements',api.from('used_battery_settlements').select('*').order('created_at',{ascending:false})],
+    ['batches',api.from('used_settlement_batches').select('*').order('settled_at',{ascending:false})],
+    ['batchItems',api.from('used_settlement_batch_items').select('*')],
+    ['events',api.from('used_settlement_events').select('*').order('occurred_at',{ascending:false}).limit(500)],
+    ['activity',api.from('used_battery_activity').select('*').order('occurred_at',{ascending:false}).limit(500)],
+    ['staff',api.rpc('get_power_ws_team')]
+  ];
+  if(canExpense()) requests.push(
+    ['expenses',api.from('ws_expenses').select('*').order('spent_on',{ascending:false})],
+    ['expenseEvents',api.from('ws_expense_events').select('*').order('occurred_at',{ascending:false}).limit(300)]
+  );
+  try {
+    const resolved=await Promise.all(requests.map(async([key,promise])=>({key,...await promise})));
+    const failed=resolved.find(x=>x.error);
+    if(failed) throw new Error(failed.key+': '+explain(failed.error));
+    for(const x of resolved)rows[x.key]=x.data || [];
+    if(!canExpense()){rows.expenses=[];rows.expenseEvents=[];}
+    ready=true;
+    render();
+  } catch(err) {
+    if(!ready)setupError(explain(err));
+    else toast('Não foi possível atualizar: '+explain(err),'error');
+  } finally{refreshing=false;}
+}
+function render() {
+  if(!api||!ready) return;
+  nav(); const titlesDetails={dashboard:'A operação em tempo real',batteries:'Controle individual de baterias usadas',sales:'Todas as vendas registradas',settlements:'Valores devidos à Power após as vendas',expenses:'Custos operacionais da WS',reports:'Fechamento financeiro e indicadores',warranties:'Garantias e prazos registrados',activity:'Registro de alterações e responsáveis'};
+  $('#heading').textContent=titles[current] || 'Visão geral';
+  $('#subtitle').textContent=titlesDetails[current]||'Controle compartilhado';
+  const fn={dashboard:dashboardView,batteries:batteryView,sales:salesView,settlements:settlementView,expenses:expenseView,reports:reportView,warranties:warrantyView,activity:activityView}[current]||dashboardView;
+  $('#app-main').innerHTML='<div class="page-stack">'+fn()+'</div>';
+}
+function dashboardView() {
+  const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),1).getTime();
+  const recent=rows.sales.filter(s=>new Date(s.sold_at).getTime()>=start);
+  const revenue=recent.reduce((a,s)=>a+Number(s.sale_price_cents),0);
+  const debt=rows.settlements.reduce((a,s)=>a+remaining(s),0);
+  const available=rows.batteries.filter(b=>b.status==='available').length;
+  const pending=rows.settlements.filter(s=>remaining(s)>0).length;
+  const salesHtml=rows.sales.slice(0,6).map(s=>{
+    const b=battery(s.battery_id), st=settleFor(s.battery_id), sts=settlingStatus(st);
+    return '<div class="list-entry"><div><strong>'+esc(b?.code||'Bateria')+' · '+esc(b?.brand||'')+'</strong><small>'+stamp(s.sold_at)+' · '+esc(s.customer_name)+'</small></div><div class="text-right"><strong>'+brl(s.sale_price_cents)+'</strong><div style="margin-top:7px">'+statusBadge(sts[0],sts[1])+'</div></div></div>';
+  }).join('')||'<div class="empty">Ainda não há vendas.</div>';
+  const pendingHtml=rows.settlements.filter(s=>remaining(s)>0).slice(0,5).map(s=>{
+    const b=battery(s.battery_id);
+    return '<div class="list-entry"><div><strong>'+esc(b?.code||shortId(s.id))+'</strong><small>'+esc(b?.brand||'')+' · '+esc(b?.model||'')+'</small></div><strong class="accent">'+brl(remaining(s))+'</strong></div>';
+  }).join('')||'<div class="empty">Nenhum acerto pendente.</div>';
+  return heading('Visão geral','Tudo o que acontece na operação fica registrado e sincronizado.',button('↻ Atualizar','refresh','secondary'))+
+  '<div class="stat-grid">'+stat('Vendas deste mês',brl(revenue),true)+stat('Baterias disponíveis',String(available))+stat('Acertos pendentes',brl(debt),true)+stat('Baterias aguardando acerto',String(pending))+'</div>'+
+  '<div class="grid-2">'+panel('Vendas recentes','<div class="panel-body lined-list">'+salesHtml+'</div>',button('Ver vendas','sales','secondary tiny'))+
+  panel('A receber · Power','<div class="panel-body lined-list">'+pendingHtml+'</div>',button('Abrir acertos','settlements','secondary tiny'))+'</div>'+
+  '<div class="note">Os valores financeiros e horários são consultados no banco Supabase. Horários exibidos em Brasília (UTC−3). '+(canPay()?'Você pode conciliar pagamentos.':'O Sandro controla e confirma os repasses.')+'</div>';
+}
+function batteryView(){
+ const actions=canSell()?button('+ Cadastrar bateria','new-battery'):'';
+ const content=rows.batteries.map(b=>{
+  const action=canSell() && !['sold','discarded'].includes(b.status)?'<button type="button" class="btn tiny secondary" data-act="edit-battery" data-id="'+b.id+'">Editar</button>':'—';
+  return '<tr><td><div class="cell-main">'+esc(b.code)+'</div><div class="cell-sub">'+stamp(b.created_at)+'</div></td><td>'+esc(b.brand)+' '+esc(b.model)+'<div class="cell-sub">'+(b.amperage_ah?esc(b.amperage_ah)+'Ah · ':'')+esc(b.serial_number||'Sem série')+'</div></td><td>'+brl(b.transfer_price_cents)+'</td><td>'+brl(b.recovery_cost_cents)+'</td><td>'+brl(b.asking_price_cents)+'</td><td>'+statusBadge(STATUS[b.status]||b.status,b.status==='available'?'green':b.status==='sold'?'gray':'yellow')+'</td><td>'+action+'</td></tr>';
+ }).join('');
+ return heading('Baterias','Recebimento, recuperação, disponibilidade e histórico. O repasse só nasce após a venda.',actions)+
+ panel('Estoque compartilhado',tbl(['Bateria / Cadastro','Identificação','Repasse Power','Recuperação','Venda sugerida','Status','Ações'],content));
+}
+function salesView(){
+ const content=rows.sales.map(s=>{
+ const b=battery(s.battery_id),st=settleFor(s.battery_id),sts=settlingStatus(st);
+ return '<tr><td><strong>'+stamp(s.sold_at)+'</strong><div class="cell-sub">Por '+esc(staffName(s.sold_by))+'</div></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td></tr>';
+ }).join('');
+ return heading('Vendas','Cada venda tem cliente, bateria, valor, data, horário e responsável.',canSell()?button('+ Registrar venda','new-sale'):'')+
+ panel('Histórico de vendas',tbl(['Quando / Vendedor','Bateria','Cliente','Venda','Garantia','Acerto'],content));
+}
+function settlementView() {
+ const pending=rows.settlements.filter(x=>remaining(x)>0);
+ const total=pending.reduce((a,x)=>a+remaining(x),0);
+ const rowsHtml=rows.settlements.map(s=>{
+  const b=battery(s.battery_id),sale=saleFor(s.battery_id),sts=settlingStatus(s);
+  const pick=canPay()&&remaining(s)>0?'<input type="checkbox" data-select-settle="'+s.id+'" aria-label="Selecionar acerto '+esc(b?.code||'')+'" '+(selectedSettle.has(s.id)?'checked':'')+'>':'';
+  const actions=canPay()?'<button class="btn tiny secondary" type="button" data-act="single-settlement" data-id="'+s.id+'">Gerenciar</button>':'—';
+  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(b?.code||shortId(s.id))+'</div><div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(s.paid_cents)+'</td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
+ }).join('');
+ const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto '+shortId(x.id)+'</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(x.total_paid_cents)+'</strong><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
+ return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?button('✓ Acertar selecionadas','batch-settle'):'')+
+ '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+Number(s.paid_cents),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
+ panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Já pago','Falta','Situação',''],rowsHtml))+
+ panel('Últimos acertos em lote','<div class="panel-body lined-list">'+batchesHtml+'</div>')+
+ '<div class="note">Apenas Sandro ou administrador podem confirmar pagamentos, corrigir valores ou dispensar cobrança. Cada alteração fica no histórico.</div>';
+}
+function expenseView() {
+ if(!canExpense())return '<div class="note error">Seu perfil não possui acesso às despesas internas da WS.</div>';
+ const sum=rows.expenses.reduce((a,x)=>a+Number(x.amount_cents),0);
+ const list=rows.expenses.map(x=>'<tr><td>'+dateBR(x.spent_on)+'</td><td>'+esc(CATEGORIES[x.category]||x.category)+'</td><td><strong>'+brl(x.amount_cents)+'</strong></td><td>'+esc(x.description)+'</td><td>'+stamp(x.created_at)+'<div class="cell-sub">'+esc(staffName(x.created_by))+'</div></td><td><button type="button" class="btn tiny secondary" data-act="edit-expense" data-id="'+x.id+'">Corrigir</button></td></tr>').join('');
+ return heading('Despesas WS','Gasolina, entregas, peças, materiais e outros gastos do Wanderson.',button('+ Nova despesa','new-expense'))+
+ '<div class="stat-grid">'+stat('Despesas registradas',brl(sum),true)+stat('Lançamentos',String(rows.expenses.length))+'</div>'+
+ panel('Gastos da operação',tbl(['Data do gasto','Categoria','Valor','Descrição','Registro / Autor',''],list))+
+ '<div class="note">Para evitar descontar o mesmo gasto duas vezes do lucro, não registre uma peça como despesa geral se ela já foi incluída no custo de recuperação da bateria.</div>';
+}
+function reportView() {
+ return heading('Relatórios','Fechamento mensal da parceria, atualizado diretamente do banco de dados.',button('↻ Atualizar relatório','fetch-report','secondary'))+
+ '<div class="panel"><div class="panel-body filter-row">'+field('Mês de referência','month','month',reportMonth,'id="report-month"')+
+ '<button class="btn" type="button" data-act="fetch-report">Consultar mês</button><button class="btn secondary" type="button" data-act="export-csv">Exportar vendas CSV</button></div></div>'+
+ '<div id="monthly-report">'+(report?reportSummary(report):'<div class="loading"><span class="loader"></span> Selecione o mês para visualizar os indicadores.</div>')+'</div>'+
+ panel('Todas as vendas do mês',tbl(['Data / Hora','Bateria','Cliente','Valor de venda','Repasse','Situação'],rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth).map(s=>{const st=settleFor(s.battery_id);const b=battery(s.battery_id);const x=settlingStatus(st);return '<tr><td>'+stamp(s.sold_at)+'</td><td>'+esc(b?.code||shortId(s.battery_id))+'</td><td>'+esc(s.customer_name)+'</td><td>'+brl(s.sale_price_cents)+'</td><td>'+brl(st?.owed_cents||0)+'</td><td>'+statusBadge(x[0],x[1])+'</td></tr>';}).join('')));
+}
+function stampMonth(input){return new Intl.DateTimeFormat('en-CA',{timeZone:BR_TIMEZONE,year:'numeric',month:'2-digit'}).format(new Date(input)).slice(0,7);}
+function reportSummary(r){
+ const showWS=role==='ws'||role==='admin';
+ const stats=role==='power'?[
+  stat('Vendas WS no mês',String(r.sales_count)),stat('Faturamento WS',brl(r.sales_revenue_cents)),
+  stat('Recebido pela Power no mês',brl(r.power_received_in_month_cents),true),stat('Saldo pendente atual',brl(r.power_pending_total_now_cents),true)
+ ]:[
+  stat('Vendas realizadas',String(r.sales_count)),stat('Faturamento do mês',brl(r.sales_revenue_cents)),
+  stat('Lucro estimado WS',brl(r.ws_estimated_profit_cents),true),stat('Gastos operacionais WS',brl(r.ws_expenses_cents))
+ ];
+ return '<div class="stat-grid">'+stats.join('')+'</div>'+
+ '<div class="panel"><div class="panel-top"><h3 class="panel-title">Resumo de '+esc(r.month)+'</h3></div><div class="panel-body lined-list">'+
+  line('Total devido à Power pelas vendas do mês',brl(r.power_repasse_sales_month_cents))+
+  line('Valores pagos à Power neste mês',brl(r.power_received_in_month_cents))+
+  line('Baterias deste mês com acerto encerrado',String(r.fully_settled_sales_in_month))+
+  (showWS ? line('Custos de recuperação em baterias vendidas',brl(r.recovery_cost_sales_month_cents))+line('Despesas WS lançadas no mês',brl(r.ws_expenses_cents))+
+  line('Lucro estimado WS (não contábil)',brl(r.ws_estimated_profit_cents)) : '')+
+ '</div></div>'+
+ '<div class="note">Lucro estimado = vendas − repasses à Power − custos de recuperação − despesas WS. Esse indicador é operacional, não um demonstrativo contábil ou fiscal. Recebimentos são agrupados pela data efetiva do acerto; vendas pela data de venda.</div>';
+}
+function line(label,value){return '<div class="list-entry"><span class="muted mini">'+esc(label)+'</span><strong>'+esc(value)+'</strong></div>';}
+function warrantyView(){
+ const now=Date.now();
+ const list=rows.sales.filter(s=>Number(s.warranty_days)>0).map(s=>{
+  const expiry=new Date(new Date(s.sold_at).getTime()+Number(s.warranty_days)*86400000);
+  const active=expiry.getTime()>=now;
+  const b=battery(s.battery_id);
+  return '<tr><td>'+esc(b?.code||shortId(s.battery_id))+'</td><td>'+esc(s.customer_name)+'</td><td>'+stamp(s.sold_at)+'</td><td>'+stamp(expiry.toISOString())+'</td><td>'+statusBadge(active?'Ativa':'Vencida',active?'green':'red')+'</td></tr>';
+ }).join('');
+ return heading('Garantias','A garantia é vinculada à venda e permanece no histórico.')+
+ panel('Garantias registradas',tbl(['Bateria','Cliente','Início','Vencimento','Status'],list));
+}
+function activityView(){
+ const events=[
+  ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:esc(x.reason)+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
+  ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:x.description||''})),
+  ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa',description:x.action==='created'?'Cadastrada':'Corrigida',detail:x.reason+' · '+brl(x.new_amount_cents)}))
+ ].sort((a,b)=>new Date(b.at)-new Date(a.at)).slice(0,600);
+ const content=events.map(x=>'<tr><td>'+stamp(x.at)+'</td><td>'+statusBadge(x.category,'gray')+'</td><td>'+esc(x.description)+'</td><td>'+esc(x.detail)+'</td><td>'+esc(staffName(x.who))+'</td></tr>').join('');
+ return heading('Histórico completo','Cada lançamento, correção, dispensa e acerto com data, hora e autor.')+
+ panel('Auditoria da parceria',tbl(['Data / Hora','Área','Ação','Detalhes','Responsável'],content));
+}
+document.addEventListener('click',async e=>{
+ const view=e.target.closest('[data-view]');
+ if(view) {
+  const next=view.dataset.view;
+  if(next==='expenses'&&!canExpense())return;
+  current=next;report=null;render();window.scrollTo({top:0,behavior:'smooth'});
+  if(next==='reports')void fetchReport();
+  return;
+ }
+ const btn=e.target.closest('[data-act]');
+ if(!btn || !api || !ready)return;
+ const act=btn.dataset.act;
+ if(titles[act]){current=act;report=null;render();if(act==='reports')void fetchReport();return;}
+ try {
+  if(act==='refresh')await loadAll(true);
+  if(act==='new-battery')openBattery();
+  if(act==='edit-battery')openBattery(battery(btn.dataset.id));
+  if(act==='new-sale')openSale();
+  if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
+  if(act==='batch-settle')openBatch();
+  if(act==='new-expense')openExpense();
+  if(act==='edit-expense')openExpense(rows.expenses.find(x=>x.id===btn.dataset.id));
+  if(act==='fetch-report')await fetchReport();
+  if(act==='export-csv')exportSales();
+ }catch(err){toast(explain(err),'error');}
+});
+document.addEventListener('change',e=>{
+ if(e.target.matches('[data-select-settle]')){
+  const id=e.target.dataset.selectSettle;
+  if(e.target.checked)selectedSettle.add(id);else selectedSettle.delete(id);
+ }
+ if(e.target.id==='report-month'){
+  reportMonth=e.target.value;report=null;render();void fetchReport();
+ }
+});
+function openBattery(b=null){
+ if(!canSell())return toast('Seu perfil não pode editar baterias.','error');
+ const creation=!b;
+ const currentStatus=b?.status||'received';
+ const statuses=[['received','Recebida'],['restoring','Em recuperação'],['available','Disponível'],['discarded','Descartada']];
+ const body='<form id="battery-form" class="field-grid">'+
+ field('Marca','brand','text',b?.brand||'','maxlength="100" required')+
+ field('Modelo / Tipo','model','text',b?.model||'','maxlength="120" required')+
+ field('Amperagem (Ah)','amperage','number',b?.amperage_ah||'','min="1" max="500"')+
+ (creation?field('Número de série (opcional)','serial','text','','maxlength="120"'): '')+
+ field('Valor combinado com Sandro (R$)','transfer','number',fromCents(b?.transfer_price_cents||0),'min="0.01" step="0.01" required')+
+ field('Custo de recuperação (R$)','recovery','number',fromCents(b?.recovery_cost_cents||0),'min="0" step="0.01" required')+
+ field('Preço de venda previsto (R$)','price','number',fromCents(b?.asking_price_cents||0),'min="0" step="0.01" required')+
+ (!creation?selectField('Situação','status',statuses,currentStatus):'')+
+ '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200">'+esc(b?.notes||'')+'</textarea></label></form>'+
+ '<div class="note" style="margin-top:15px">Receber uma bateria não cria dívida. O acerto será gerado automaticamente após a venda.</div>';
+ modal(creation?'Nova bateria':'Editar bateria '+b.code,body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button form="battery-form" type="submit" class="btn">Salvar bateria</button>');
+ $('#battery-form').addEventListener('submit',e=>{
+  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
+  const args=creation?{
+   p_brand:d.brand,p_model:d.model,p_transfer_price_cents:cents(d.transfer),
+   p_asking_price_cents:cents(d.price),p_amperage_ah:d.amperage?Number(d.amperage):null,
+   p_serial_number:d.serial||null,p_notes:d.notes||null
+  }:{
+   p_battery_id:b.id,p_status:d.status,p_transfer_price_cents:cents(d.transfer),
+   p_recovery_cost_cents:cents(d.recovery),p_asking_price_cents:cents(d.price),p_note:d.notes
+  };
+  void runRpc(creation?'register_used_battery':'update_used_battery',args,'Bateria salva no banco.');
+ });
+}
+function openSale(){
+ if(!canSell())return toast('Seu perfil não pode registrar vendas.','error');
+ const available=rows.batteries.filter(b=>b.status==='available');
+ if(!available.length)return toast('Cadastre e marque uma bateria como disponível antes de vender.','error');
+ const choices=available.map(b=>[b.id,b.code+' · '+b.brand+' '+b.model+' — '+brl(b.asking_price_cents)]);
+ const first=available[0];
+ const body='<form id="sale-form" class="field-grid">'+
+ selectField('Bateria disponível','battery',choices,first.id)+
+ field('Valor real de venda (R$)','price','number',fromCents(first.asking_price_cents),'min="0.01" step="0.01" required')+
+ field('Nome do cliente','customer','text','','maxlength="160" required')+
+ field('Telefone (opcional)','phone','tel','','maxlength="30"')+
+ field('Placa (opcional)','plate','text','','maxlength="15"')+
+ selectField('Forma de pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],'pix')+
+ field('Garantia em dias','warranty','number','30','min="0" max="365" step="1" required')+
+ '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
+ '<div class="note" style="margin-top:15px">Ao salvar, o servidor registra a data/hora, dá baixa no estoque e gera o acerto pendente para Sandro. Não clique duas vezes.</div>';
+ modal('Registrar venda',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="sale-form">Confirmar venda</button>');
+ $('#sale-form').addEventListener('change',e=>{
+  if(e.target.name==='battery'){const b=battery(e.target.value);if(b)$('#sale-form [name=price]').value=fromCents(b.asking_price_cents);}
+ });
+ $('#sale-form').addEventListener('submit',e=>{
+  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
+  void runRpc('register_used_battery_sale',{
+   p_battery_id:d.battery,p_customer_name:d.customer,p_sale_price_cents:cents(d.price),
+   p_payment_method:d.method,p_warranty_days:Number(d.warranty),
+   p_customer_phone:d.phone||null,p_vehicle_plate:d.plate||null,p_notes:d.notes||null
+  },'Venda salva! Acerto pendente criado para Sandro.');
+ });
+}
+function openSettlement(s) {
+ if(!canPay())return toast('Somente Sandro ou administrador podem gerenciar acertos.','error');
+ if(!s)return;
+ const b=battery(s.battery_id),sts=settlingStatus(s);
+ const opts=[
+ ['payment','Registrar pagamento recebido'],
+ ['adjust_owed','Alterar valor que Sandro deve receber'],
+ ['waive','Dispensar saldo pendente'],
+ ['correct_paid','Corrigir pagamento registrado'],
+ ['reopen','Reabrir valor dispensado']
+ ];
+ const body='<div class="note">Bateria <b>'+esc(b?.code||shortId(s.battery_id))+'</b> · Status: <b>'+sts[0]+'</b> · Total: <b>'+brl(s.owed_cents)+'</b> · Pago: <b>'+brl(s.paid_cents)+'</b> · Pendente: <b>'+brl(remaining(s))+'</b></div>'+
+ '<form id="settlement-form" class="field-grid" style="margin-top:16px">'+
+ selectField('Operação','action',opts,remaining(s)?'payment':'adjust_owed','id="settlement-action"')+
+ field('Valor da operação (R$)','amount','number',fromCents(remaining(s)),'step="0.01" min="0"')+
+ '<label class="field wide"><span>Justificativa (obrigatória para correção, edição e dispensa)</span><textarea name="reason" maxlength="400"></textarea></label></form>'+
+ '<div class="note warn" style="margin-top:15px">Correção de pagamento permite valor negativo (ex.: -10,00 para diminuir o pago). Para dispensar ou reabrir, o valor é ignorado. Toda mudança deixa registro de data, hora e responsável.</div>';
+ modal('Gerenciar acerto',body,'<button class="btn secondary" type="button" data-modal-close>Cancelar</button><button class="btn" type="submit" form="settlement-form">Confirmar alteração</button>');
+ const action=$('#settlement-action');
+ action.addEventListener('change',()=>{
+  const amount=$('#settlement-form [name=amount]');
+  amount.disabled=['waive','reopen'].includes(action.value);
+  amount.min=action.value==='correct_paid'?'':action.value==='adjust_owed'?'0.01':'0';
+  if(action.value==='adjust_owed')amount.value=fromCents(s.owed_cents);
+  if(action.value==='payment')amount.value=fromCents(remaining(s));
+ });
+ $('#settlement-form').addEventListener('submit',e=>{
+  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
+  if(['adjust_owed','waive','correct_paid','reopen'].includes(d.action)&&d.reason.trim().length<5) return toast('Informe a justificativa com pelo menos 5 caracteres.','error');
+  let value=null;
+  if(!['waive','reopen'].includes(d.action)){
+   if(d.action==='correct_paid'){
+    const n=Number(String(d.amount||'').replace(',','.'));
+    if(!Number.isFinite(n)||n===0)return toast('Informe o valor de correção diferente de zero.','error');
+    value=Math.sign(n)*cents(String(Math.abs(n)));
+   }else value=cents(d.amount);
+  }
+  void runRpc('manage_used_settlement',{p_settlement_id:s.id,p_action:d.action,p_amount_cents:value,p_reason:d.reason||null},'Acerto atualizado com registro de auditoria.');
+ });
+}
+function openBatch(){
+ if(!canPay())return toast('Seu perfil não pode efetuar acertos.','error');
+ const ss=rows.settlements.filter(s=>selectedSettle.has(s.id)&&remaining(s)>0);
+ if(!ss.length)return toast('Selecione pelo menos uma bateria pendente na tabela.','error');
+ if(ss.length>100)return toast('Selecione no máximo 100 baterias por lote.','error');
+ const items=ss.map(s=>{
+  const b=battery(s.battery_id),old=remaining(s);
+  return '<div class="batch-item" data-settle-item="'+s.id+'"><div class="batch-item-head"><div><strong>'+esc(b?.code||shortId(s.id))+' · '+esc(b?.brand||'')+'</strong><div class="cell-sub">Pendente: '+brl(old)+' · Pago antes: '+brl(s.paid_cents)+'</div></div>'+statusBadge('Selecionada','yellow')+'</div><div class="batch-item-fields">'+
+  field('Novo valor total para Sandro','owed','number',fromCents(s.owed_cents),'min="0.01" step="0.01" required')+
+  field('Recebido agora (R$)','paid','number',fromCents(old),'min="0" step="0.01" required')+
+  '<label class="field wide"><span><input type="checkbox" name="waive" style="width:auto;min-height:0;vertical-align:middle"> Dispensar eventual saldo restante</span></label>'+
+  field('Motivo de ajuste/dispensa','reason','text','','maxlength="400" class="wide"')+'</div></div>';
+ }).join('');
+ const body='<div class="note">Este acerto será feito em <b>um único lote</b>. Se qualquer bateria falhar, nada será pago. Cada item terá data/hora e auditoria.</div>'+
+ '<form id="batch-form" style="margin-top:16px">'+
+ '<div class="batch-list">'+items+'</div><div class="batch-total"><span>Recebimento agora</span><strong id="batch-total">'+brl(ss.reduce((a,s)=>a+remaining(s),0))+'</strong></div>'+
+ '<div class="field-grid">'+selectField('Recebimento','method',[['pix','PIX'],['cash','Dinheiro'],['transfer','Transferência'],['other','Outro']],'pix')+
+ field('Referência do pagamento','reference','text','','maxlength="150"')+
+ '<label class="field wide"><span>Observação geral</span><textarea name="notes" maxlength="500"></textarea></label></div></form>';
+ modal('Acertar '+ss.length+' bateria(s)',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="batch-form">✓ Confirmar lote</button>');
+ $('#batch-form').addEventListener('input',()=>{
+  let sum=0;for(const item of $$('[data-settle-item]')){const v=Number($('[name=paid]',item).value);if(Number.isFinite(v)&&v>=0)sum+=Math.round(v*100);}
+  $('#batch-total').textContent=brl(sum);
+ });
+ $('#batch-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  let itemsOut;
+  try{itemsOut=$$('[data-settle-item]').map(el=>{
+   const id=el.dataset.settleItem;
+   const old=rows.settlements.find(s=>s.id===id);
+   const owed=cents($('[name=owed]',el).value);
+   const paid=cents($('[name=paid]',el).value);
+   const waive=$('[name=waive]',el).checked;
+   const reason=$('[name=reason]',el).value.trim();
+   if(owed!==Number(old.owed_cents)||waive){if(reason.length<5)throw new Error('Informe o motivo do ajuste/dispensa em cada bateria.');}
+   const rest=owed-Number(old.paid_cents)-Number(old.waived_cents)-paid;
+   if(rest<0)throw new Error('Pagamento maior que o saldo da bateria.');
+   if(rest>0&&!waive)throw new Error('O lote deve quitar totalmente cada bateria. Marque dispensa para o restante, ou altere o valor pago.');
+   return {settlement_id:id,new_owed_cents:owed,paid_now_cents:paid,waive_remaining:waive,reason};
+  });}catch(err){toast(explain(err),'error');return;}
+  const d=Object.fromEntries(new FormData(e.currentTarget));
+  const sum=itemsOut.reduce((a,x)=>a+x.paid_now_cents,0);
+  if(!confirm('Confirmar o recebimento de '+brl(sum)+' para '+itemsOut.length+' bateria(s)? Esta ação ficará registrada.'))return;
+  void runRpc('settle_used_batteries_batch',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
+  selectedSettle.clear();
+ });
+}
+function openExpense(x=null){
+ if(!canExpense())return toast('Seu perfil não pode registrar despesas.','error');
+ const creating=!x;
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:BR_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const body='<form id="expense-form" class="field-grid">'+
+ (creating?selectField('Categoria','category',Object.entries(CATEGORIES), 'gasoline')+
+ field('Data da despesa','spent','date',today,'required max="'+today+'"'):'')+
+ field(creating?'Valor (R$)':'Novo valor corrigido (R$)','amount','number',fromCents(x?.amount_cents||0),'min="0" step="0.01" required')+
+ (creating?field('Descrição (ex.: gasolina para entrega)','description','text','','maxlength="300" required'):field('Motivo da correção','reason','text','','minlength="5" required'))+
+ '</form>';
+ modal(creating?'Registrar despesa':'Corrigir despesa',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="expense-form">Salvar</button>');
+ $('#expense-form').addEventListener('submit',e=>{
+  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
+  const amount=cents(d.amount);
+  if(creating && amount<=0)return toast('A despesa precisa ser maior que zero.','error');
+  const args=creating?{p_category:d.category,p_amount_cents:amount,p_spent_on:d.spent,p_description:d.description}:
+  {p_expense_id:x.id,p_new_amount_cents:amount,p_reason:d.reason};
+  void runRpc(creating?'register_ws_expense':'correct_ws_expense',args,creating?'Despesa lançada.':'Despesa corrigida com auditoria.');
+ });
+}
+async function fetchReport(){
+ if(!api||!ready)return;
+ const month=$('#report-month')?.value||reportMonth;
+ if(!/^\d{4}-\d{2}$/.test(month))return toast('Escolha um mês válido.','error');
+ reportMonth=month;const slot=$('#monthly-report');
+ if(slot)slot.innerHTML='<div class="loading"><span class="loader"></span> Calculando indicadores...</div>';
+ try{
+  const {data,error}=await api.rpc('get_power_ws_monthly_report',{p_month:month+'-01'});
+  if(error)throw error;
+  if(current!=='reports')return;
+  report=data;
+  const here=$('#monthly-report');if(here)here.innerHTML=reportSummary(data);
+ }catch(err){if(slot)slot.innerHTML='<div class="note error">'+esc(explain(err))+'</div>';toast(explain(err),'error');}
+}
+function exportSales(){
+ const rs=rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth);
+ if(!rs.length)return toast('Não há vendas para exportar neste mês.','error');
+ const csvSafe=x=>{const s=String(x??'');return '"'+( /^[=+\-@\t\r]/.test(s)?"'"+s:s).replace(/"/g,'""')+'"';};
+ const matrix=[['Venda em','Bateria','Marca','Cliente','Telefone','Placa','Valor venda (R$)','Repasse Power (R$)','Valor pago (R$)','Saldo (R$)','Status','Vendedor','Garantia (dias)']];
+ for(const s of rs){
+  const b=battery(s.battery_id), st=settleFor(s.battery_id),ss=settlingStatus(st);
+  matrix.push([stamp(s.sold_at),b?.code||'',b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),ss[0],staffName(s.sold_by),s.warranty_days]);
+ }
+ const content='\uFEFF'+matrix.map(r=>r.map(csvSafe).join(';')).join('\r\n');
+ const blob=new Blob([content],{type:'text/csv;charset=utf-8;'});
+ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='power-ws-vendas-'+reportMonth+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ toast('Relatório CSV exportado. Proteja os dados dos clientes.');
+}
