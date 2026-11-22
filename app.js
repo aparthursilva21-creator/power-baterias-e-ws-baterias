@@ -24,7 +24,14 @@ let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems:
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let liveChannel=null;let liveRefreshDebounce=null;
-let reportMonth = new Intl.DateTimeFormat('en-CA', { timeZone: BR_TIMEZONE, year: 'numeric', month: '2-digit' }).format(new Date()).slice(0,7);
+function zonedDateParts(value){
+  return Object.fromEntries(new Intl.DateTimeFormat('en-US',{
+    timeZone:BR_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'
+  }).formatToParts(new Date(value)).filter(p=>['year','month','day'].includes(p.type)).map(p=>[p.type,p.value]));
+}
+function monthKey(value){const p=zonedDateParts(value);return p.year+'-'+p.month;}
+function dayKey(value){const p=zonedDateParts(value);return p.year+'-'+p.month+'-'+p.day;}
+let reportMonth = monthKey(new Date());
 const cents = value => {
   const s = String(value ?? '').trim().replace(',', '.');
   if (!/^\d+(?:\.\d{1,2})?$/.test(s)) throw new Error('Informe um valor válido com no máximo duas casas decimais.');
@@ -195,8 +202,8 @@ function render() {
   $('#app-main').innerHTML='<div class="page-stack">'+fn()+'</div>';
 }
 function dashboardView() {
-  const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),1).getTime();
-  const recent=rows.sales.filter(s=>new Date(s.sold_at).getTime()>=start);
+  const nowMonth=monthKey(new Date());
+  const recent=rows.sales.filter(s=>monthKey(s.sold_at)===nowMonth);
   const revenue=recent.reduce((a,s)=>a+Number(s.sale_price_cents),0);
   const debt=rows.settlements.reduce((a,s)=>a+remaining(s),0);
   const available=rows.batteries.filter(b=>b.status==='available').length;
@@ -264,7 +271,7 @@ function reportView() {
  '<div id="monthly-report">'+(report?reportSummary(report):'<div class="loading"><span class="loader"></span> Selecione o mês para visualizar os indicadores.</div>')+'</div>'+
  panel('Todas as vendas do mês',tbl(['Data / Hora','Bateria','Cliente','Valor de venda','Repasse','Situação'],rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth).map(s=>{const st=settleFor(s.battery_id);const b=battery(s.battery_id);const x=settlingStatus(st);return '<tr><td>'+stamp(s.sold_at)+'</td><td>'+esc(b?.code||shortId(s.battery_id))+'</td><td>'+esc(s.customer_name)+'</td><td>'+brl(s.sale_price_cents)+'</td><td>'+brl(st?.owed_cents||0)+'</td><td>'+statusBadge(x[0],x[1])+'</td></tr>';}).join('')));
 }
-function stampMonth(input){return new Intl.DateTimeFormat('en-CA',{timeZone:BR_TIMEZONE,year:'numeric',month:'2-digit'}).format(new Date(input)).slice(0,7);}
+function stampMonth(input){return monthKey(input);}
 function reportSummary(r){
  const showWS=role==='ws'||role==='admin';
  const stats=role==='power'?[
@@ -491,7 +498,7 @@ function openBatch(){
 function openExpense(x=null){
  if(!canExpense())return toast('Seu perfil não pode registrar despesas.','error');
  const creating=!x;
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:BR_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const today=dayKey(new Date());
  const body='<form id="expense-form" class="field-grid">'+
  (creating?selectField('Categoria','category',Object.entries(CATEGORIES), 'gasoline')+
  field('Data da despesa','spent','date',today,'required max="'+today+'"'):'')+
