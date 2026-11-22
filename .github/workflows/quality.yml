@@ -18,5 +18,7 @@ jobs:
           node-version: '22'
       - name: Conferir sintaxe do login
         run: node --check auth.js
+      - name: Conferir sintaxe das telas
+        run: node --check app.js
       - name: Executar testes de estrutura
         run: node --test tests/smoke.test.mjs
