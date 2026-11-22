@@ -51,14 +51,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f tests/postgres_stub.sql
       - name: Executar controle de acesso
         run: psql -v ON_ERROR_STOP=1 -f supabase/setup-auth.sql
-      - name: Instalar schema de operação
-        run: psql -v ON_ERROR_STOP=1 -f supabase/002_used_batteries_schema.sql
-      - name: Instalar funções de vendas e acertos
-        run: psql -v ON_ERROR_STOP=1 -f supabase/003_used_batteries_operations.sql
-      - name: Instalar acertos em lote, despesas e relatórios
-        run: psql -v ON_ERROR_STOP=1 -f supabase/004_batches_expenses_reports.sql
-      - name: Instalar consulta de equipe
-        run: psql -v ON_ERROR_STOP=1 -f supabase/005_staff_realtime.sql
+      - name: Instalar todas as migrações com o mesmo arquivo usado pela loja
+        run: psql -v ON_ERROR_STOP=1 -f supabase/INSTALAR_FINAL.sql
       - name: Testar fluxo empresarial
         run: psql -v ON_ERROR_STOP=1 -f tests/integration.sql
 
