@@ -23,6 +23,7 @@ let api = null, user = null, role = null, current = 'dashboard';
 let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
+let liveChannel=null;let liveRefreshDebounce=null;
 let reportMonth = new Intl.DateTimeFormat('en-CA', { timeZone: BR_TIMEZONE, year: 'numeric', month: '2-digit' }).format(new Date()).slice(0,7);
 const cents = value => {
   const s = String(value ?? '').trim().replace(',', '.');
@@ -36,7 +37,7 @@ const fromCents = c => (Number(c || 0)/100).toFixed(2);
 const brl = c => (Number(c || 0)/100).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
 const esc = s => String(s ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
 const stamp = s => s ? new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s)) : '—';
-const dateBR = s => s ? new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s)) : '—';
+const dateBR = s => s ? (/^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4) : new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s))) : '—';
 const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
 const canSell = () => role === 'ws' || role === 'admin';
 const canPay = () => role === 'power' || role === 'admin';
@@ -127,12 +128,28 @@ async function boot(session) {
   $('#account-details').textContent=user.email || 'Conta autorizada';
   nav();
   await loadAll();
+  if(liveChannel) { await api.removeChannel(liveChannel); liveChannel=null; }
+  // Eventos imediatos, com consulta periódica de segurança caso o WebSocket caia.
+  liveChannel=api.channel('pbws-sync-' + user.id.slice(0,8))
+    .on('postgres_changes',{event:'*',schema:'public',table:'used_battery_sales'},syncSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'used_batteries'},syncSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'used_battery_settlements'},syncSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'used_settlement_batches'},syncSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'ws_expenses'},syncSoon)
+    .subscribe();
   if(!timer) timer=setInterval(()=>{if(api&&document.visibilityState==='visible'&&ready&&!submitting)void loadAll(true);},20000);
+}
+function syncSoon(){
+  clearTimeout(liveRefreshDebounce);
+  liveRefreshDebounce=setTimeout(()=>{if(api && ready && !refreshing && !submitting)void loadAll(true);},600);
 }
 window.addEventListener('pbws:ready',e=>void boot(e.detail));
 window.addEventListener('pbws:logout',()=>{
   api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[]};
-  selectedSettle.clear();if(timer)clearInterval(timer);timer=null;closeModal();
+  selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
+  clearTimeout(liveRefreshDebounce);
+  if(liveChannel && api)void api.removeChannel(liveChannel);
+  liveChannel=null;closeModal();
 });
 if(window.pbwsSession)void boot(window.pbwsSession);
 window.addEventListener('focus',()=>{if(api&&ready&&!refreshing)void loadAll(true);});
@@ -159,6 +176,7 @@ async function loadAll(silent=false) {
     const failed=resolved.find(x=>x.error);
     if(failed) throw new Error(failed.key+': '+explain(failed.error));
     for(const x of resolved)rows[x.key]=x.data || [];
+    selectedSettle=new Set([...selectedSettle].filter(id=>rows.settlements.some(s=>s.id===id && remaining(s)>0)));
     if(!canExpense()){rows.expenses=[];rows.expenseEvents=[];}
     ready=true;
     render();
@@ -279,7 +297,7 @@ function warrantyView(){
 }
 function activityView(){
  const events=[
-  ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:esc(x.reason)+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
+  ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:x.reason+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
   ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:x.description||''})),
   ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa',description:x.action==='created'?'Cadastrada':'Corrigida',detail:x.reason+' · '+brl(x.new_amount_cents)}))
  ].sort((a,b)=>new Date(b.at)-new Date(a.at)).slice(0,600);
@@ -297,8 +315,10 @@ document.addEventListener('click',async e=>{
   return;
  }
  const btn=e.target.closest('[data-act]');
- if(!btn || !api || !ready)return;
+ if(!btn || !api)return;
  const act=btn.dataset.act;
+ if(act==='refresh'){await loadAll(false);return;}
+ if(!ready)return;
  if(titles[act]){current=act;report=null;render();if(act==='reports')void fetchReport();return;}
  try {
   if(act==='refresh')await loadAll(true);
@@ -344,7 +364,7 @@ function openBattery(b=null){
   const args=creation?{
    p_brand:d.brand,p_model:d.model,p_transfer_price_cents:cents(d.transfer),
    p_asking_price_cents:cents(d.price),p_amperage_ah:d.amperage?Number(d.amperage):null,
-   p_serial_number:d.serial||null,p_notes:d.notes||null
+   p_serial_number:d.serial||null,p_notes:d.notes||null,p_recovery_cost_cents:cents(d.recovery)
   }:{
    p_battery_id:b.id,p_status:d.status,p_transfer_price_cents:cents(d.transfer),
    p_recovery_cost_cents:cents(d.recovery),p_asking_price_cents:cents(d.price),p_note:d.notes
@@ -465,7 +485,6 @@ function openBatch(){
   const sum=itemsOut.reduce((a,x)=>a+x.paid_now_cents,0);
   if(!confirm('Confirmar o recebimento de '+brl(sum)+' para '+itemsOut.length+' bateria(s)? Esta ação ficará registrada.'))return;
   void runRpc('settle_used_batteries_batch',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
-  selectedSettle.clear();
  });
 }
 function openExpense(x=null){
