@@ -16,13 +16,7 @@ Sistema privado de gestão de baterias usadas, vendas, garantias, repasses e rel
 
 ## Banco
 
-Rodar apenas no **Supabase novo da parceria**, nesta ordem:
-
-1. \`supabase/setup-auth.sql\` (se ainda não foi executado);
-2. \`supabase/002_used_batteries_schema.sql\`;
-3. \`supabase/003_used_batteries_operations.sql\`;
-4. \`supabase/004_batches_expenses_reports.sql\`;
-5. \`supabase/005_staff_realtime.sql\`.
+Rodar no **Supabase novo da parceria**, após executar \`supabase/setup-auth.sql\` uma única vez. Para instalar a operação, use o arquivo **[INSTALAR_FINAL.sql](supabase/INSTALAR_FINAL.sql)**, que inclui na ordem as migrações 002 a 005. Não execute o instalador mais de uma vez sem verificar o resultado.
 
 O sistema antigo da Power Baterias não é alterado por estes arquivos.
 
