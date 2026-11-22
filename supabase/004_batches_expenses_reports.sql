@@ -268,7 +268,7 @@ declare v_old public.ws_expenses%rowtype;
 begin
   if public.current_app_role() not in ('ws','admin') then
     raise exception 'Apenas WS ou administrador corrigem despesas'; end if;
-  if p_new_amount_cents is null or p_new_amount_cents < 0 then
+  if p_new_amount_cents is null or p_new_amount_cents <= 0 then
     raise exception 'Valor incorreto'; end if;
   if char_length(btrim(coalesce(p_reason,''))) < 5 then
     raise exception 'Informe o motivo da correção'; end if;
