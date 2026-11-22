@@ -61,3 +61,16 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/005_staff_realtime.sql
       - name: Testar fluxo empresarial
         run: psql -v ON_ERROR_STOP=1 -f tests/integration.sql
+
+  browser:
+    name: Navegador real no celular e no PC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar controlador Chrome de teste
+        run: npm install --no-save playwright-core@1.56.1
+      - name: Verificar modo mobile e desktop
+        run: node tests/browser-smoke.mjs
