@@ -36,7 +36,7 @@ create table if not exists public.used_batteries (
   amperage_ah integer check (amperage_ah between 1 and 500),
   serial_number text,
   -- preço acordado de repasse à Power: SEM pagamento até haver venda
-  transfer_price_cents bigint not null check (transfer_price_cents >= 0),
+  transfer_price_cents bigint not null check (transfer_price_cents > 0),
   recovery_cost_cents bigint not null default 0 check (recovery_cost_cents >= 0),
   asking_price_cents bigint not null check (asking_price_cents >= 0),
   status text not null default 'received'
@@ -66,7 +66,7 @@ create table if not exists public.used_battery_settlements (
   id uuid primary key default gen_random_uuid(),
   battery_id uuid not null unique references public.used_batteries(id),
   sale_id uuid not null unique references public.used_battery_sales(id),
-  owed_cents bigint not null check (owed_cents >= 0),
+  owed_cents bigint not null check (owed_cents > 0),
   paid_cents bigint not null default 0 check (paid_cents >= 0),
   waived_cents bigint not null default 0 check (waived_cents >= 0),
   created_at timestamptz not null default now(),
