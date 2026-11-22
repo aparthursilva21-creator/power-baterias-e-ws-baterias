@@ -18,12 +18,10 @@ O sistema é uma aplicação web responsiva para navegador e tela inicial do And
 
 1. Abra o projeto Supabase da parceria no seu dashboard.
 2. Entre em **SQL Editor → New query**.
-3. Abra e cole o conteúdo completo de **supabase/002_used_batteries_schema.sql**; clique Run e confira sucesso.
-4. Faça a mesma coisa com **supabase/003_used_batteries_operations.sql**.
-5. Execute **supabase/004_batches_expenses_reports.sql**.
-6. Execute **supabase/005_staff_realtime.sql**.
-7. Abra o site (Ctrl+Shift+R no computador ou feche e reabra no celular). Entre com a conta Google autorizada.
-8. Teste com **baterias fictícias** até validar Sandro, Wanderson e Arthur trabalhando ao mesmo tempo.
+3. Abra o arquivo **supabase/INSTALAR_FINAL.sql** no GitHub, clique **Raw**, copie todo o conteúdo e cole na consulta nova do Supabase.
+4. Clique **Run** **uma única vez**, confirme que executou sem erros e não replique automaticamente.
+5. Abra o site (Ctrl+Shift+R no computador ou feche e reabra no celular). Entre com a conta Google autorizada.
+6. Teste com **baterias fictícias** até validar Sandro, Wanderson e Arthur trabalhando ao mesmo tempo.
 
 A etapa anterior \`supabase/setup-auth.sql\` já foi preparada e executada durante a configuração do Google Login. Se trocar o banco, ela deverá ser feita antes das quatro migrações acima.
 
