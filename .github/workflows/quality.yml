@@ -1,0 +1,22 @@
+name: Verificar qualidade do sistema
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    name: Verificar JavaScript, autenticacao e PWA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Conferir sintaxe do login
+        run: node --check auth.js
+      - name: Executar testes de estrutura
+        run: node --test tests/smoke.test.mjs
