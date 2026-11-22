@@ -1,0 +1,70 @@
+/* Mobile-first finishing for 360–430px phones and tablets.
+   Login action comes first; data entry stays usable with touch and a bottom tab bar. */
+*{ -webkit-tap-highlight-color:transparent }
+@media(max-width:880px){
+  #auth-screen{display:flex!important;flex-direction:column!important;min-height:100svh!important}
+  #auth-screen .auth-hero{min-height:auto!important;padding:clamp(18px,4vw,28px) clamp(18px,5vw,30px)!important;flex:none!important}
+  #auth-screen .auth-brand-strip{margin:0 0 18px!important;min-height:0!important}
+  #auth-screen .auth-headline{margin:12px 0 0!important}
+  #auth-screen .auth-headline h1{font-size:clamp(28px,5.5vw,38px)!important;line-height:1.16!important;margin:0!important}
+  #auth-screen .auth-headline p{display:none!important}
+  #auth-screen .auth-photo-wrap{display:none!important}
+  #auth-screen .auth-foot{display:none!important}
+  #auth-screen .auth-hero:before{display:none!important}
+  #auth-screen .auth-side{padding:8px clamp(16px,5vw,30px) 36px!important;display:block!important}
+  #auth-screen .auth-card{padding:clamp(22px,5vw,32px)!important;min-height:0!important;max-width:600px!important;margin:0 auto!important;border-radius:21px!important}
+  #auth-screen .auth-bubble{width:54px!important;height:54px!important;border-radius:15px!important;margin:0 auto 17px!important}
+  #auth-screen .auth-card h2{font-size:clamp(24px,5.4vw,31px)!important}
+  #auth-screen .auth-card>p{font-size:14px!important;margin-bottom:22px!important}
+  #auth-screen #google-login{min-height:57px!important;white-space:normal!important;padding:12px 14px!important}
+  #auth-screen #auth-message{font-size:12px!important;padding:12px!important;margin-top:18px!important}
+  #auth-screen .auth-privacy{margin-top:16px!important;font-size:11px!important}
+  #auth-screen .photo-credit{display:none!important}
+  #app-shell{padding-bottom:calc(85px + env(safe-area-inset-bottom,0px))}
+  #app-shell aside{position:sticky!important;top:0!important;z-index:30;width:100%!important;min-height:62px;padding:12px 16px!important;border-right:0!important;border-bottom:1px solid #27382d!important;background:rgba(7,13,12,.97)!important;backdrop-filter:blur(18px)}
+  #app-shell aside .brand{margin:0!important;border-bottom:0!important;padding:0!important;font-size:16px!important;max-width:60%}
+  #app-shell aside .brand small{font-size:8px!important;letter-spacing:.04em}
+  #app-shell aside .logo{padding:10px!important;font-size:12px!important}
+  #app-shell aside .notice{display:none!important}
+  #app-shell .links{position:fixed!important;bottom:0!important;left:0!important;right:0!important;width:100%!important;z-index:40;display:flex!important;flex-direction:row!important;gap:0!important;overflow-x:auto!important;scrollbar-width:none;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;background:rgba(8,16,15,.97)!important;padding:7px 8px calc(9px + env(safe-area-inset-bottom,0px))!important;border-top:1px solid rgba(142,238,106,.2)!important;box-shadow:0 -10px 36px #0006}
+  #app-shell .links::-webkit-scrollbar{display:none}
+  #app-shell .nav{display:flex!important;min-width:75px!important;flex:1 0 75px!important;max-width:116px;flex-direction:column;gap:6px!important;align-items:center;justify-content:center;text-align:center;padding:8px 6px!important;border-radius:11px!important;font-size:10px!important;scroll-snap-align:start;white-space:nowrap!important;transform:none!important}
+  #app-shell .nav .nav-symbol{font-size:22px!important;line-height:1.1}
+  #app-shell .nav .nav-label{font-size:10px!important}
+  #app-shell .nav.active{box-shadow:inset 0 2px 0 #b9ff45!important}
+  #app-shell main{margin:0!important;max-width:none!important;padding:24px 16px 12px!important}
+  #app-shell header{margin-bottom:18px!important;padding-bottom:18px!important;align-items:flex-start}
+  #app-shell header h1{font-size:clamp(27px,6vw,34px)!important}
+  #app-shell header .tag{font-size:10px!important}
+  #app-shell .cards{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+  #app-shell .card{min-width:0!important;min-height:120px!important;padding:16px!important;border-radius:14px!important}
+  #app-shell .card span{line-height:1.35;display:block}
+  #app-shell .card strong{font-size:clamp(20px,5.5vw,28px)!important;overflow-wrap:anywhere;line-height:1.15}
+  #app-shell .two{grid-template-columns:1fr!important;gap:12px!important}
+  #app-shell .panel{padding:16px!important;border-radius:15px!important;overflow-x:auto!important}
+  #app-shell .toolbar{align-items:stretch!important;gap:10px!important}
+  #app-shell .toolbar h2{margin:0!important}
+  #app-shell .toolbar .btn{width:100%;min-height:46px}
+  #app-shell table{min-width:570px!important}
+  #app-shell td,#app-shell th{padding:13px 9px!important}
+  #app-shell button,#app-shell input,#app-shell select{min-height:44px}
+  #app-shell input,#app-shell select{font-size:16px!important}
+  #app-shell #account-bar{position:absolute!important;top:12px!important;right:12px!important;bottom:auto!important;left:auto!important;width:130px!important;margin:0!important;padding:6px!important;background:transparent!important;border:0!important;box-shadow:none!important;font-size:0!important;text-align:right}
+  #app-shell #account-details{font-size:9px!important;line-height:1.2;max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin:0 0 3px!important}
+  #app-shell #google-logout{min-height:32px!important;font-size:11px!important;padding:5px 8px!important}
+  #app-shell .modal{padding:0!important;align-items:flex-end!important;z-index:99!important}
+  #app-shell .dialog{width:100%!important;max-width:none!important;max-height:92dvh!important;padding:20px 17px calc(22px + env(safe-area-inset-bottom,0px))!important;border-radius:22px 22px 0 0!important;overflow-y:auto!important}
+  #app-shell form{grid-template-columns:1fr!important;gap:13px!important}
+  #app-shell form .wide{grid-column:1!important}
+  #app-shell .dialog-head{position:sticky;top:-20px;z-index:2;background:#111c23;padding:4px 0 12px;align-items:center}
+  #app-shell .dialog-head h2{font-size:18px!important}
+  #app-shell .dialog-head .btn{min-height:38px!important}
+}
+@media(max-width:370px){
+  #app-shell main{padding:19px 12px 10px!important}
+  #app-shell .card{padding:12px!important}
+  #app-shell .card strong{font-size:19px!important}
+  #auth-screen .auth-brand-divider{display:none!important}
+  #auth-screen .auth-ws-brand{width:108px!important}
+}
+@media(prefers-reduced-motion:reduce){#app-shell .card:hover{transform:none!important}}
