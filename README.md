@@ -12,6 +12,8 @@ Sistema privado de **lançamento direto de vendas de baterias usadas**, garantia
 
 **[Como gerar e compartilhar a notinha azul da WS Baterias](docs/COMPROVANTE_WS.md)**
 
+**[Continuar uma venda após consultar o WhatsApp, sem perder os campos](docs/CONTINUIDADE_WHATSAPP.md)**
+
 ## Arquitetura
 
 - HTML, CSS e JavaScript sem build, hospedados no GitHub Pages;
@@ -47,3 +49,7 @@ Em **Vendas → Lançar venda antiga**, use a data/hora real do negócio e infor
 ## Comprovante de venda WS Baterias
 
 Ao confirmar uma venda, o sistema abre automaticamente o comprovante WS (não fiscal). É possível baixar o PDF, imprimir e compartilhar no celular. Uma segunda via pode ser gerada em **Vendas → Notinha WS**. O documento usa o tema azul WS e preserva a privacidade dos valores internos de repasse e custos de recuperação.
+
+## Continuidade do aplicativo no celular
+
+Ao alternar para o WhatsApp, o sistema mantém o login Google e não desmonta o formulário ao receber novamente o evento de sessão ativa. Vendas não concluídas ganham **rascunho privado no Supabase, válido por até 30 minutos após a última edição**, para recuperação após o celular encerrar a página. O botão **Descartar rascunho** limpa uma tentativa; o salvamento de uma venda real também o apaga. Dados de clientes não são guardados no armazenamento permanente do navegador.
