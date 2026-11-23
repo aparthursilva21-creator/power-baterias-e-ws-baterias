@@ -73,6 +73,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/013_historical_entries.sql
       - name: Testar venda antiga, gasto antigo e pagamento histórico
         run: psql -v ON_ERROR_STOP=1 -f tests/historical-integration.sql
+      - name: Instalar despesas Power isoladas
+        run: psql -v ON_ERROR_STOP=1 -f supabase/014_power_expenses.sql
+      - name: Testar gastos Power, relatorio e privacidade
+        run: psql -v ON_ERROR_STOP=1 -f tests/power-expenses-integration.sql
 
   browser:
     name: Navegador real no celular e no PC
