@@ -365,11 +365,11 @@ function dashboardView() {
   const pending=rows.settlements.filter(s=>remaining(s)>0).length;
   const salesHtml=rows.sales.slice(0,6).map(s=>{
     const b=battery(s.battery_id), st=settleFor(s.battery_id), sts=settlingStatus(st);
-    return '<div class="list-entry"><div><strong>'+esc(b?.code||'Bateria')+' · '+esc(b?.brand||'')+'</strong><small>'+stamp(s.sold_at)+' · '+esc(s.customer_name)+'</small></div><div class="text-right"><strong>'+brl(s.sale_price_cents)+'</strong><div style="margin-top:7px">'+statusBadge(sts[0],sts[1])+'</div></div></div>';
+    return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(b))+'</strong><small>'+stamp(s.sold_at)+' · '+esc(s.customer_name)+'</small></div><div class="text-right"><strong>'+brl(s.sale_price_cents)+'</strong><div style="margin-top:7px">'+statusBadge(sts[0],sts[1])+'</div></div></div>';
   }).join('')||'<div class="empty">Ainda não há vendas.</div>';
   const pendingHtml=rows.settlements.filter(s=>remaining(s)>0).slice(0,5).map(s=>{
     const b=battery(s.battery_id);
-    return '<div class="list-entry"><div><strong>'+esc(b?.code||shortId(s.id))+'</strong><small>'+esc(b?.brand||'')+' · '+esc(b?.model||'')+'</small></div><strong class="accent">'+brl(remaining(s))+'</strong></div>';
+    return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(b))+'</strong><small>'+esc(saleFor(s.battery_id)?.customer_name||'Cliente não informado')+'</small></div><strong class="accent">'+brl(remaining(s))+'</strong></div>';
   }).join('')||'<div class="empty">Nenhum acerto pendente.</div>';
   return heading('Visão geral','Tudo o que acontece na operação fica registrado e sincronizado.',button('↻ Atualizar','refresh','secondary'))+
   '<div class="stat-grid">'+stat('Vendas deste mês',brl(revenue),true)+stat('Vendas realizadas no mês',String(recent.length))+stat('Acertos pendentes',brl(debt),true)+stat('Baterias aguardando acerto',String(pending))+'</div>'+
@@ -776,7 +776,7 @@ function openCancelSale(s){
  const b=battery(s.battery_id),st=settleFor(s.battery_id);
  const paid=Number(st?.paid_cents||0)+Number(st?.waived_cents||0);
  const warning=paid>0?'<div class="note warn" style="margin-bottom:14px">Existe pagamento ou dispensa associado. O sistema não permitirá cancelar até a situação financeira ser corrigida e conciliada.</div>':'';
- const body=warning+'<div class="note error"><b>Cancelamento administrativo</b><br>Venda '+esc(b?.code||shortId(s.id))+' de '+brl(s.sale_price_cents)+'. Depois de cancelada, sairá do painel e dos relatórios, mas ficará guardada no histórico. Nenhum dinheiro será estornado automaticamente.</div>'+
+ const body=warning+'<div class="note error"><b>Cancelamento administrativo</b><br>Venda de '+esc(batteryDisplay(b))+' no valor de '+brl(s.sale_price_cents)+'. Depois de cancelada, sairá do painel e dos relatórios, mas ficará guardada no histórico. Nenhum dinheiro será estornado automaticamente.</div>'+
  '<form id="cancel-sale-form" class="field-grid" style="margin-top:18px">'+
  '<label class="field wide"><span>Motivo obrigatório</span><textarea name="reason" maxlength="500" minlength="5" required placeholder="Ex.: lançamento fictício ou duplicado"></textarea></label>'+
  field('Digite CANCELAR para confirmar','confirm','text','','required autocomplete="off" class="wide"')+'</form>';
@@ -859,7 +859,7 @@ function openBatch(){
  if(ss.length>100)return toast('Selecione no máximo 100 baterias por lote.','error');
  const items=ss.map(s=>{
   const b=battery(s.battery_id),old=remaining(s);
-  return '<div class="batch-item" data-settle-item="'+s.id+'"><div class="batch-item-head"><div><strong>'+esc(b?.code||shortId(s.id))+' · '+esc(b?.brand||'')+'</strong><div class="cell-sub">Pendente: '+brl(old)+' · Pago antes: '+brl(s.paid_cents)+'</div></div>'+statusBadge('Selecionada','yellow')+'</div><div class="batch-item-fields">'+
+  return '<div class="batch-item" data-settle-item="'+s.id+'"><div class="batch-item-head"><div><strong>'+esc(batteryDisplay(b))+'</strong><div class="cell-sub">Pendente: '+brl(old)+' · Pago antes: '+brl(s.paid_cents)+'</div></div>'+statusBadge('Selecionada','yellow')+'</div><div class="batch-item-fields">'+
   field('Novo valor total para Sandro','owed','number',fromCents(s.owed_cents),'min="0.01" step="0.01" required')+
   field('Recebido agora (R$)','paid','number',fromCents(old),'min="0" step="0.01" required')+
   '<label class="field wide"><span><input type="checkbox" name="waive" style="width:auto;min-height:0;vertical-align:middle"> Dispensar eventual saldo restante</span></label>'+
