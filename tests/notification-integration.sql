@@ -31,6 +31,7 @@ begin
   );
   select id into v_pending from public.used_battery_settlements where sale_id=v_sale;
 
+  perform set_config('request.jwt.claim.sub',v_power::text,true);
   blocked:=false;
   begin
     perform public.pbws_remind_ws(array[v_pending]);
@@ -40,6 +41,7 @@ begin
   perform set_config('request.jwt.claim.sub',v_power::text,true);
   v_reminder:=public.pbws_remind_ws(array[v_pending]);
   if (v_reminder->>'count')::int<>1 then raise exception 'Lembrete gerou contagem errada'; end if;
+  perform set_config('request.jwt.claim.sub',v_ws::text,true);
   select count(*) into n from public.pbws_notifications
   where recipient_id=v_ws and kind='reminder';
   if n<>1 then raise exception 'Lembrete nao chegou na caixa da WS'; end if;
