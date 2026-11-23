@@ -48,17 +48,41 @@ async function scenario(width,height,userRole='admin'){
     };
     const stub={
       from(name){return {
+        selectedId:null,
         select(){return this;},order(){return this;},limit(){return this;},
+        eq(_key,id){this.selectedId=id;return this;},
+        single(){const data=(tables[name]||[]).find(x=>x.id===this.selectedId);
+          return Promise.resolve({data,error:data?null:{message:'Registro não encontrado'}});},
         then(resolve,reject){return Promise.resolve({data:tables[name]||[],error:null}).then(resolve,reject);}
       };},
       rpc(name,params){
-        if(name==='register_direct_battery_sale'){
-          window.lastSaleArgs=params;
-          return Promise.resolve({data:'sample-sale-id',error:null});
-        }
-        if(name==='register_historical_battery_sale'){
-          window.lastHistoricalArgs=params;
-          return Promise.resolve({data:'sample-old-sale-id',error:null});
+        if(name==='register_direct_battery_sale'||name==='register_historical_battery_sale'){
+          const historical=name==='register_historical_battery_sale';
+          if(historical)window.lastHistoricalArgs=params;
+          else window.lastSaleArgs=params;
+          const batId=historical?'00000000-0000-4000-8000-000000000031':
+            '00000000-0000-4000-8000-000000000021';
+          const saleId=historical?'00000000-0000-4000-8000-000000000030':
+            '00000000-0000-4000-8000-000000000020';
+          const code=historical?'WS-000003':'WS-000002';
+          tables.used_batteries.push({id:batId,code,brand:params.p_brand,model:params.p_model,
+            amperage_ah:params.p_amperage_ah,serial_number:params.p_serial_number,
+            transfer_price_cents:params.p_transfer_price_cents,
+            recovery_cost_cents:params.p_recovery_cost_cents,
+            status:'sold',created_at:now});
+          tables.used_battery_sales.push({id:saleId,battery_id:batId,
+            customer_name:params.p_customer_name,customer_phone:params.p_customer_phone,
+            vehicle_plate:params.p_vehicle_plate,sale_price_cents:params.p_sale_price_cents,
+            warranty_days:params.p_warranty_days,payment_method:params.p_payment_method,
+            notes:params.p_notes,sold_at:historical?'2025-02-12T17:40:00.000Z':now,
+            recorded_at:now,sold_by:'00000000-0000-4000-8000-000000000099',
+            is_historical:historical});
+          tables.used_battery_settlements.push({id:historical?
+            '00000000-0000-4000-8000-000000000033':
+            '00000000-0000-4000-8000-000000000022',
+            battery_id:batId,sale_id:saleId,owed_cents:params.p_transfer_price_cents,
+            paid_cents:params.p_prior_paid_cents||0,waived_cents:0,created_at:now});
+          return Promise.resolve({data:saleId,error:null});
         }
         if(name==='register_ws_expense_historical'){
           window.lastHistoricalExpense=params;
@@ -136,6 +160,25 @@ async function scenario(width,height,userRole='admin'){
   assert.equal(recorded.p_sale_price_cents,20000);
   assert.equal(recorded.p_transfer_price_cents,6000);
   assert.ok(recorded.p_request_id,'chave de idempotência enviada');
+  await page.locator('.ws-receipt').waitFor({timeout:10000});
+  assert.match(await page.locator('.ws-receipt').innerText(),/WS BATERIAS/);
+  assert.match(await page.locator('.ws-receipt').innerText(),/DOCUMENTO NÃO FISCAL/);
+  assert.match(await page.locator('.ws-receipt').innerText(),/R\\$\\s*200,00/);
+  assert.doesNotMatch(await page.locator('.ws-receipt').innerText(),/Repasse|recuperação \(R\$\)/i);
+  const [pdfDownload]=await Promise.all([
+    page.waitForEvent('download',{timeout:15000}),
+    page.locator('[data-receipt-action="download"]').click()
+  ]);
+  assert.match(pdfDownload.suggestedFilename(),/^WS-Baterias-Comprovante-.*\.pdf$/);
+  const pdfStream=await pdfDownload.createReadStream();
+  const pdfParts=[];for await (const part of pdfStream)pdfParts.push(part);
+  const pdfBinary=Buffer.concat(pdfParts);
+  assert.ok(pdfBinary.length>12000,'PDF gerado realmente contém uma página');
+  assert.equal(pdfBinary.subarray(0,8).toString('utf8'),'%PDF-1.4');
+  await page.locator('#modal-close').click();
+  await page.locator('[data-act="ws-receipt"]').last().click();
+  assert.ok(await page.locator('.ws-receipt').isVisible(),'segunda via pelo histórico');
+  await page.locator('#modal-close').click();
   await page.locator('[data-act="new-historical-sale"]').click();
   assert.ok(await page.locator('#sale-form [name=sold_when]').isVisible(),'data e hora para venda antiga');
   await page.locator('#sale-form [name=sold_when]').fill('2025-02-12T14:40');
@@ -153,6 +196,9 @@ async function scenario(width,height,userRole='admin'){
   assert.equal(old.p_sold_at_local,'2025-02-12T14:40');
   assert.equal(old.p_prior_paid_cents,3000);
   assert.equal(old.p_paid_at_local,'2025-02-15T11:20');
+  await page.locator('.ws-receipt').waitFor({timeout:10000});
+  assert.match(await page.locator('.ws-receipt').innerText(),/12\/02\/2025/);
+  await page.locator('#modal-close').click();
 
   await page.locator('[data-act="edit-sale"]').first().click();
   assert.ok(await page.locator('#edit-sale-form').isVisible(),'correcao de venda acessivel');
