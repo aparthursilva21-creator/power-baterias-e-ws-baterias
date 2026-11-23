@@ -283,17 +283,39 @@ function settlementView() {
  panel('Últimos acertos em lote','<div class="panel-body lined-list">'+batchesHtml+'</div>')+
  '<div class="note">Apenas Sandro ou administrador podem confirmar pagamentos, corrigir valores ou dispensar cobrança. Cada alteração fica no histórico.</div>';
 }
-function expenseView() {
- if(!canExpense())return '<div class="note error">Seu perfil não possui acesso às despesas internas da WS.</div>';
- const sum=rows.expenses.reduce((a,x)=>a+Number(x.amount_cents),0);
- const list=rows.expenses.map(x=>'<tr><td>'+(x.spent_at?stamp(x.spent_at):dateBR(x.spent_on))+
- (x.is_historical?'<div class="cell-sub">Gasto antigo</div>':'')+'</td><td>'+esc(CATEGORIES[x.category]||x.category)+'</td><td><strong>'+brl(x.amount_cents)+'</strong></td><td>'+esc(x.description)+'</td><td>'+stamp(x.created_at)+'<div class="cell-sub">'+esc(staffName(x.created_by))+'</div></td><td><button type="button" class="btn tiny secondary" data-act="edit-expense" data-id="'+x.id+'">Corrigir</button></td></tr>').join('');
- return heading('Despesas WS','Gasolina, entregas, peças, materiais e outros gastos do Wanderson.',
- '<div class="btn-row">'+button('+ Nova despesa','new-expense')+
- button('◷ Gasto antigo','new-historical-expense','secondary')+'</div>')+
- '<div class="stat-grid">'+stat('Despesas registradas',brl(sum),true)+stat('Lançamentos',String(rows.expenses.length))+'</div>'+
- panel('Gastos da operação',tbl(['Data do gasto','Categoria','Valor','Descrição','Registro / Autor',''],list))+
- '<div class="note">Para evitar descontar o mesmo gasto duas vezes do lucro, não registre uma peça como despesa geral se ela já foi incluída no custo de recuperação da bateria.</div>';
+function expenseView(){
+ if(!canExpense())return '<div class="note error">Seu perfil não possui acesso a despesas.</div>';
+ const isPower=expenseBranch==='power';
+ if((isPower&&!canViewPowerExpenses())||(!isPower&&!canViewWSExpenses()))
+  return '<div class="note error">Sem permissão para consultar essas despesas.</div>';
+ const source=isPower?rows.powerExpenses:rows.expenses;
+ const company=isPower?'Power Baterias':'WS Baterias';
+ const sum=source.reduce((a,x)=>a+Number(x.amount_cents),0);
+ const actions=source.map(x=>{
+  const when=x.spent_at?stamp(x.spent_at):dateBR(x.spent_on);
+  return '<tr><td>'+when+(x.is_historical?'<div class="cell-sub">Gasto antigo</div>':'')+
+   '</td><td>'+esc(CATEGORIES[x.category]||x.category)+'</td><td><strong>'+brl(x.amount_cents)+
+   '</strong></td><td>'+esc(x.description)+'</td><td>'+stamp(x.created_at)+
+   '<div class="cell-sub">'+esc(staffName(x.created_by))+'</div></td><td>'+
+   '<button type="button" class="btn tiny secondary" data-act="edit-expense" data-id="'+x.id+'">Corrigir</button></td></tr>';
+ }).join('');
+ const switcher=(role==='admin'?
+  '<div class="btn-row">'+
+  '<button type="button" data-expense-branch="ws" class="btn '+(isPower?'secondary':'')+'">WS Baterias</button>'+
+  '<button type="button" data-expense-branch="power" class="btn '+(isPower?'':'secondary')+'">Power Baterias</button></div>':'');
+ return heading('Despesas · '+company,
+  isPower?'Controle dos gastos próprios da Power. Não altera o lucro da WS.':
+          'Gasolina, entregas e outros custos da operação da WS.',
+  '<div class="btn-row">'+button('+ Nova despesa','new-expense')+
+   button('◷ Gasto antigo','new-historical-expense','secondary')+'</div>')+
+ (switcher?'<div class="panel"><div class="panel-body">'+switcher+'</div></div>':'')+
+ '<div class="stat-grid">'+stat('Total registrado · '+company,brl(sum),true)+
+ stat('Lançamentos',String(source.length))+'</div>'+
+ panel('Gastos de '+company,tbl(['Data do gasto','Categoria','Valor','Descrição','Cadastro / Autor',''],actions))+
+ '<div class="note">'+(isPower?
+  'Esses valores são exclusivos da Power e aparecem separadamente nos relatórios.':
+  'Para evitar duplicidade no lucro da WS, não registre como despesa geral um custo já incluído na recuperação da bateria.')+
+ '</div>';
 }
 function reportView() {
  return heading('Relatórios','Fechamento mensal da parceria, atualizado diretamente do banco de dados.',button('↻ Atualizar relatório','fetch-report','secondary'))+
