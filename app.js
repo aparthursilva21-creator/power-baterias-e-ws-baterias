@@ -37,6 +37,13 @@ function brazilLocalNow(){
  const x=part=>t.find(v=>v.type===part)?.value||'00';
  return dayKey(new Date())+'T'+x('hour')+':'+x('minute');
 }
+function brazilInputDateTime(value){
+ const t=new Intl.DateTimeFormat('en-GB',{
+  timeZone:BR_TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false
+ }).formatToParts(new Date(value));
+ const v=name=>t.find(p=>p.type===name)?.value||'00';
+ return dayKey(value)+'T'+v('hour')+':'+v('minute');
+}
 let reportMonth = monthKey(new Date());
 const cents = value => {
   const s = String(value ?? '').trim().replace(',', '.');
@@ -54,6 +61,10 @@ const dateBR = s => s ? (/^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? String(s).slice
 const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
 const canSell = () => role === 'ws' || role === 'admin';
 const canBackdateSale = () => ['ws','power','admin'].includes(role);
+const canEditSale = s => !!s && (
+ role==='admin' || (role==='ws'&&s.sold_by===user?.id) ||
+ (role==='power'&&s.is_historical&&s.recorded_by===user?.id)
+);
 const canPay = () => role === 'power' || role === 'admin';
 const canExpense = () => ['ws','power','admin'].includes(role);
 const canViewWSExpenses=()=>role==='ws'||role==='admin';
@@ -253,7 +264,7 @@ function dashboardView() {
 function salesView(){
  const content=rows.sales.map(s=>{
  const b=battery(s.battery_id),st=settleFor(s.battery_id),sts=settlingStatus(st);
- const actions=canSell()&&(role==='admin'||s.sold_by===user?.id)?
+ const actions=canEditSale(s)?
     '<div class="row-actions"><button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>'+
     (role==='admin'?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Cancelar</button>':'')+'</div>':'—';
  return '<tr><td><strong>'+stamp(s.sold_at)+'</strong>'+
@@ -485,12 +496,16 @@ function openSale(historical=false){
  });
 }
 function openEditSale(s){
- if(!s||!canSell()||(role!=='admin'&&s.sold_by!==user?.id))
+ if(!canEditSale(s))
   return toast('Você não tem permissão para corrigir essa venda.','error');
  const b=battery(s.battery_id);
  if(!b)return toast('Dados da bateria não encontrados.','error');
  const body='<div class="note">Corrigir a venda '+esc(b.code)+'. A data e o responsável originais não serão alterados. O repasse ao Sandro deve ser ajustado na aba Acertos.</div>'+
  '<form id="edit-sale-form" class="field-grid" style="margin-top:16px">'+
+ (s.is_historical?
+   field('Data e hora reais da venda (Brasília)','sold_when','datetime-local',
+     brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide"'):
+   '')+
  field('Marca','brand','text',b.brand,'maxlength="100" required')+
  field('Modelo','model','text',b.model,'maxlength="120" required')+
  field('Amperagem (Ah)','amperage','number',b.amperage_ah||'','min="1" max="500" step="1"')+
@@ -518,6 +533,7 @@ function openEditSale(s){
     recovery_cost_cents:cents(d.recovery),payment_method:d.method,
     warranty_days:Number(d.warranty),notes:d.notes
    };
+   if(s.is_historical)patch.sold_at_local=d.sold_when;
    void runRpc('correct_used_battery_sale',{
     p_sale_id:s.id,p_patch:patch,p_reason:d.reason.trim()
    },'Correção salva com data, hora e responsável no histórico.');
