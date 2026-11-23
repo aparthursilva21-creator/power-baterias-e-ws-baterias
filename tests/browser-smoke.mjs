@@ -124,6 +124,24 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
             paid_cents:params.p_prior_paid_cents||0,waived_cents:0,created_at:now});
           return Promise.resolve({data:saleId,error:null});
         }
+        if(name==='correct_used_battery_sale'){
+          window.lastDateCorrection=params;
+          const v=tables.used_battery_sales.find(x=>x.id===params.p_sale_id);
+          if(!v)return Promise.resolve({data:null,error:{message:'Venda ausente'}});
+          const before={...v};
+          v.sold_at=new Date(params.p_patch.sold_at_local+':00-03:00').toISOString();
+          tables.used_sale_revisions??=[];
+          tables.used_sale_revisions.push({
+            id:'00000000-0000-4000-8000-000000000070',
+            sale_id:v.id,action:'corrected',
+            reason:params.p_reason,
+            actor_id:'00000000-0000-4000-8000-000000000099',
+            occurred_at:new Date().toISOString(),
+            before_data:{sale:before,battery:tables.used_batteries.find(x=>x.id===v.battery_id)},
+            after_data:{sale:{...v},battery:tables.used_batteries.find(x=>x.id===v.battery_id)}
+          });
+          return Promise.resolve({data:null,error:null});
+        }
         if(name==='register_ws_expense_historical'){
           window.lastHistoricalExpense=params;
           return Promise.resolve({data:'old-expense-id',error:null});
@@ -259,7 +277,21 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
 
   await page.locator('[data-act="edit-sale"]').first().click();
   assert.ok(await page.locator('#edit-sale-form').isVisible(),'correcao de venda acessivel');
-  await page.locator('#modal-close').click();
+  assert.ok(await page.locator('#edit-sale-form [name=sold_when]').isVisible(),'data editavel para venda normal');
+  await page.locator('#edit-sale-form [name=sold_when]').fill('2025-02-09T15:45');
+  await page.locator('#edit-sale-form [name=reason]').fill('Cliente confirmou que a venda foi realizada neste dia e horario');
+  await page.locator('.dialog-footer button[form="edit-sale-form"]').click();
+  await page.waitForFunction(()=>!!window.lastDateCorrection);
+  const correction=await page.evaluate(()=>window.lastDateCorrection);
+  assert.equal(correction.p_patch.sold_at_local,'2025-02-09T15:45',
+    'Nova data/hora foi enviada ao banco');
+  assert.match(correction.p_reason,/Cliente confirmou/);
+  await page.locator(side+' [data-view="activity"]').click();
+  const activityText=await page.locator('#app-main').innerText();
+  assert.match(activityText,/Data e horário corrigidos/);
+  assert.match(activityText,/ANTES: .* → DEPOIS: /);
+  assert.match(activityText,/09\\/02\\/2025/);
+  await page.locator(side+' [data-view="sales"]').click();
   await page.locator('[data-act="cancel-sale"]').first().click();
   assert.ok(await page.locator('#cancel-sale-form').isVisible(),'cancelamento administrativo acessivel');
   await page.locator('#modal-close').click();
