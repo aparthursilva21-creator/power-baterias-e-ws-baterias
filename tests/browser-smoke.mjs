@@ -27,13 +27,13 @@ const exe=[process.env.CHROME_BIN,'/usr/bin/google-chrome','/usr/bin/chromium'].
 if(!exe){server.close();throw Error('Chrome não encontrado no ambiente de testes');}
 const browser=await chromium.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
 const failures=[];
-async function scenario(width,height){
+async function scenario(width,height,userRole='admin'){
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:width<600?2:1,isMobile:width<600,hasTouch:width<600});
   page.on('pageerror',err=>failures.push('JS '+width+': '+err.message));
   await page.route('**/auth.js*',route=>route.fulfill({status:200,contentType:'text/javascript',body:''}));
   await page.route('https://fonts.googleapis.com/**',route=>route.abort());
   await page.route('https://fonts.gstatic.com/**',route=>route.abort());
-  await page.addInitScript(()=>{
+  await page.addInitScript(testRole=>{
     const id='00000000-0000-4000-8000-000000000010';
     const sid='00000000-0000-4000-8000-000000000011';
     const now=new Date().toISOString();
@@ -78,12 +78,12 @@ async function scenario(width,height){
       channel(){return{on(){return this;},subscribe(){return this;}};},
       removeChannel(){return Promise.resolve();}
     };
-    window.pbwsSession={client:stub,user:{id:'00000000-0000-4000-8000-000000000099',email:'admin@example.test'},role:'admin'};
+    window.pbwsSession={client:stub,user:{id:'00000000-0000-4000-8000-000000000099',email:'teste@example.test'},role:testRole};
     document.addEventListener('DOMContentLoaded',()=>{
       document.getElementById('auth-screen').hidden=true;
       document.getElementById('app-shell').hidden=false;
     });
-  });
+  },userRole);
   await page.goto('http://127.0.0.1:'+port+'/',{waitUntil:'domcontentloaded'});
   await page.locator('.stat-grid .stat-card').first().waitFor({timeout:10000});
   assert.equal(await page.locator('.stat-card').count(),4,'painel deve ter 4 cartões');
@@ -100,6 +100,24 @@ async function scenario(width,height){
     assert.ok(await page.locator('.sidebar').isVisible(),'menu lateral visível no PC');
   }
   const side=width<600?'#bottom-nav':'#side-nav';
+  if(userRole==='power'){
+    await page.locator(side+' [data-view="sales"]').click();
+    assert.equal(await page.locator('[data-act="new-sale"]').count(),0,'Power nao cadastra venda de hoje');
+    await page.locator('[data-act="new-historical-sale"]').click();
+    assert.ok(await page.locator('#sale-form [name=sold_when]').isVisible(),'Sandro lança venda antiga');
+    await page.locator('#modal-close').click();
+    await page.locator(side+' [data-view="expenses"]').click();
+    assert.ok((await page.locator('.page-heading').textContent()).includes('Power Baterias'),'Sandro vê despesas Power');
+    await page.locator('[data-act="new-historical-expense"]').click();
+    assert.ok(await page.locator('#expense-form [name=spent]').isVisible(),'Sandro registra gasto antigo');
+    await page.close();return;
+  }
+  if(userRole==='ws'){
+    await page.locator(side+' [data-view="expenses"]').click();
+    assert.ok((await page.locator('.page-heading').textContent()).includes('WS Baterias'),'WS vê suas despesas');
+    assert.equal(await page.locator('[data-expense-branch="power"]').count(),0,'WS nao abre despesas Power');
+    await page.close();return;
+  }
   await page.locator(side+' [data-view="sales"]').click();
   await page.locator('[data-act="new-sale"]').click();
   assert.ok(await page.locator('#sale-form').isVisible(),'formulário de venda acessível');
@@ -188,6 +206,8 @@ async function scenario(width,height){
 try{
   await scenario(390,844);
   await scenario(1440,900);
+  await scenario(390,844,'power');
+  await scenario(390,844,'ws');
   assert.deepEqual(failures,[],'erros JavaScript em execução');
   console.log('PASSOU: login simulado, dashboard, mobile, vendas, lote, despesas e relatórios');
 }finally{
