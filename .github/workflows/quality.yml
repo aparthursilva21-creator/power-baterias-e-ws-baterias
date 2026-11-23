@@ -69,6 +69,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/012_ignore_cancelled_in_reminders.sql
       - name: Testar correcao e cancelamento de venda
         run: psql -v ON_ERROR_STOP=1 -f tests/sale-revisions-integration.sql
+      - name: Instalar lançamentos antigos sem alterar as vendas atuais
+        run: psql -v ON_ERROR_STOP=1 -f supabase/013_historical_entries.sql
+      - name: Testar venda antiga, gasto antigo e pagamento histórico
+        run: psql -v ON_ERROR_STOP=1 -f tests/historical-integration.sql
 
   browser:
     name: Navegador real no celular e no PC
