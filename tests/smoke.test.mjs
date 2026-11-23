@@ -8,7 +8,8 @@ const read=path=>readFileSync(new URL(path,root),'utf8');
 test('arquivos essenciais presentes',()=>{
  for(const path of ['index.html','auth.js','app.js','app.css','config.js','manifest.webmanifest',
  'supabase/002_used_batteries_schema.sql','supabase/003_used_batteries_operations.sql',
- 'supabase/004_batches_expenses_reports.sql','supabase/005_staff_realtime.sql']){
+ 'supabase/004_batches_expenses_reports.sql','supabase/005_staff_realtime.sql',
+ 'supabase/006_direct_sale_no_stock.sql']){
   assert.ok(existsSync(new URL(path,root)), 'Ausente: '+path);
  }
 });
@@ -33,7 +34,10 @@ test('aplicativo real usa banco remoto, não localStorage',()=>{
  const js=read('app.js');
  assert.match(js,/from\('used_battery_sales'\)/);
  assert.match(js,/from\('used_battery_settlements'\)/);
- assert.match(js,/register_used_battery_sale/);
+ assert.match(js,/register_direct_battery_sale/);
+ assert.doesNotMatch(js, /function (?:batteryView|openBattery)\s*\(/);
+ assert.doesNotMatch(js, /\['batteries',/);
+ assert.match(js,/p_request_id:requestId/);
  assert.match(js,/settle_used_batteries_batch/);
  assert.match(js,/register_ws_expense/);
  assert.match(js,/get_power_ws_monthly_report/);
@@ -47,6 +51,7 @@ test('migrações contêm controle de acesso e transações financeiras',()=>{
  const schema=read('supabase/002_used_batteries_schema.sql');
  const ops=read('supabase/003_used_batteries_operations.sql');
  const batch=read('supabase/004_batches_expenses_reports.sql');
+ const direct=read('supabase/006_direct_sale_no_stock.sql');
  assert.match(schema,/enable row level security/i);
  assert.match(schema,/used_battery_settlements/);
  assert.match(ops,/for update/);
@@ -56,6 +61,9 @@ test('migrações contêm controle de acesso e transações financeiras',()=>{
  assert.match(batch,/used_settlement_batches/);
  assert.match(batch,/used_settlement_events/);
  assert.match(batch,/get_power_ws_monthly_report/);
+ assert.match(direct,/client_request_id/);
+ assert.match(direct,/register_direct_battery_sale/);
+ assert.match(direct,/status,[^\n]*notes,created_by/);
 });
 
 test('PWA apto para uso em Android e iPhone via navegador',()=>{
