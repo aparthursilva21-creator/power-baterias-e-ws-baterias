@@ -163,7 +163,7 @@ async function scenario(width,height,userRole='admin'){
   await page.locator('.ws-receipt').waitFor({timeout:10000});
   assert.match(await page.locator('.ws-receipt').innerText(),/WS BATERIAS/);
   assert.match(await page.locator('.ws-receipt').innerText(),/DOCUMENTO NÃO FISCAL/);
-  assert.match(await page.locator('.ws-receipt').innerText(),/R\\$\\s*200,00/);
+  assert.match(await page.locator('.ws-receipt').innerText(),/R\$\s*200,00/);
   assert.doesNotMatch(await page.locator('.ws-receipt').innerText(),/Repasse|recuperação \(R\$\)/i);
   const [pdfDownload]=await Promise.all([
     page.waitForEvent('download',{timeout:15000}),
