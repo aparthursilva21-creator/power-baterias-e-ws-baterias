@@ -56,6 +56,17 @@ begin
   perform public.manage_used_settlement(v_st,'payment',3000,'teste');
  exception when others then v_blocked:=true;end;
  if not v_blocked then raise exception 'Permitiu pagamento de venda cancelada'; end if;
+ v_blocked:=false;
+ begin
+   perform public.pbws_remind_ws(array[v_st]);
+ exception when others then
+   if sqlerrm like '%Nao ha acertos pendentes%' then
+     v_blocked:=true;
+   else
+     raise;
+   end if;
+ end;
+ if not v_blocked then raise exception 'Enviou cobranca de venda cancelada'; end if;
 
  v_out:=public.get_power_ws_monthly_report((now() at time zone 'America/Sao_Paulo')::date);
  if (v_out->>'sales_count')::int<>3 then
