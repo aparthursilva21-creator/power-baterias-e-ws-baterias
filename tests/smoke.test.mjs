@@ -10,7 +10,7 @@ test('arquivos essenciais presentes',()=>{
  'supabase/002_used_batteries_schema.sql','supabase/003_used_batteries_operations.sql',
  'supabase/004_batches_expenses_reports.sql','supabase/005_staff_realtime.sql',
  'supabase/006_direct_sale_no_stock.sql',
- 'supabase/007_notifications.sql','supabase/008_push_dispatch.sql','supabase/010_sale_edit_cancel.sql','supabase/011_test_reset_log.sql','sw.js',
+ 'supabase/007_notifications.sql','supabase/008_push_dispatch.sql','supabase/010_sale_edit_cancel.sql','supabase/011_test_reset_log.sql','supabase/013_historical_entries.sql','sw.js',
  'notifications.js','notifications.css','supabase/functions/pbws-push/index.ts']){
   assert.ok(existsSync(new URL(path,root)), 'Ausente: '+path);
  }
@@ -37,6 +37,10 @@ test('aplicativo real usa banco remoto, não localStorage',()=>{
  assert.match(js,/from\('used_battery_sales'\)/);
  assert.match(js,/from\('used_battery_settlements'\)/);
  assert.match(js,/register_direct_battery_sale/);
+ assert.match(js,/register_historical_battery_sale/);
+ assert.match(js,/register_ws_expense_historical/);
+ assert.match(js,/p_paid_at_local/);
+ assert.match(js,/brazilLocalNow/);
  assert.doesNotMatch(js, /function (?:batteryView|openBattery)\s*\(/);
  const navOnly=js.slice(js.indexOf('const MENU'),js.indexOf('const CATEGORIES'));
  assert.doesNotMatch(navOnly, /\['batteries',/);
