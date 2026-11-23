@@ -379,46 +379,63 @@ document.addEventListener('change',e=>{
   reportMonth=e.target.value;report=null;render();void fetchReport();
  }
 });
-function openSale(){
- if(!canSell())return toast('Seu perfil não pode registrar vendas.','error');
- // Um identificador por lançamento permite repetir a mesma solicitação com segurança.
+function openSale(historical=false){
+ if(historical?!canBackdateSale():!canSell())
+  return toast('Seu perfil não pode registrar este tipo de venda.','error');
  const requestId=crypto.randomUUID();
  const body='<form id="sale-form" class="field-grid">'+
- '<div class="field wide" style="margin-bottom:2px"><span class="eyebrow">Bateria vendida</span><span class="muted mini">Preencha os dados da bateria aqui, sem um cadastro anterior.</span></div>'+
- field('Marca da bateria','brand','text','','maxlength="100" required autocomplete="off"')+
+ (historical?'<div class="note wide"><b>Venda antiga</b><br>Use a data e a hora reais da venda, no horário de Brasília. O sistema registra separadamente quando você digitou as informações.</div>'+
+ field('Data e hora da venda (Brasília)','sold_when','datetime-local','','required max="'+brazilLocalNow()+'" class="wide"'):'')+
+ '<div class="field wide"><span class="eyebrow">Dados da bateria vendida</span></div>'+
+ field('Marca da bateria','brand','text','','maxlength="100" required')+
  field('Modelo / Tipo','model','text','','maxlength="120" required')+
  field('Amperagem (Ah, opcional)','amperage','number','','min="1" max="500" step="1"')+
  field('Número de série (opcional)','serial','text','','maxlength="120"')+
  field('Valor da venda (R$)','price','number','','min="0.01" step="0.01" required inputmode="decimal"')+
  field('Valor devido ao Sandro (R$)','transfer','number','','min="0.01" step="0.01" required inputmode="decimal"')+
- field('Gasto na recuperação (R$)','recovery','number','0.00','min="0" step="0.01" required inputmode="decimal"')+
- '<div class="field wide" style="margin:8px 0 2px"><span class="eyebrow">Cliente e garantia</span></div>'+
+ field('Gasto com recuperação (R$)','recovery','number','0.00','min="0" step="0.01" required inputmode="decimal"')+
+ '<div class="field wide"><span class="eyebrow">Cliente e garantia</span></div>'+
  field('Nome do cliente','customer','text','','maxlength="160" required')+
  field('Telefone (opcional)','phone','tel','','maxlength="30"')+
  field('Placa (opcional)','plate','text','','maxlength="15"')+
  selectField('Forma de pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],'pix')+
  field('Garantia em dias','warranty','number','30','min="0" max="365" step="1" required')+
- '<label class="field wide"><span>Observações (opcional)</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
- '<div class="note" style="margin-top:15px">A venda e a bateria serão lançadas juntas, com data/hora do servidor. O acerto com Sandro ficará pendente imediatamente. O lançamento já cria o histórico necessário para os relatórios.</div>';
- modal('Registrar venda de bateria',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="sale-form">✓ Confirmar venda</button>');
+ (historical?'<div class="field wide"><span class="eyebrow">Acerto já realizado (se houver)</span><span class="muted mini">Se ainda não pagou ao Sandro, deixe R$ 0,00. Se já pagou, informe quanto e quando foi.</span></div>'+
+ field('Valor já pago ao Sandro (R$)','already_paid','number','0.00','min="0" step="0.01" required')+
+ field('Data e hora do pagamento antigo (Brasília)','paid_when','datetime-local','','max="'+brazilLocalNow()+'"'):'')+
+ '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
+ (historical?'<div class="note" style="margin-top:15px">A venda entra no relatório do mês em que ocorreu; pagamentos informados entram no mês em que foram realizados. O histórico registra o lançamento feito agora.</div>':
+ '<div class="note" style="margin-top:15px">A venda, o cliente, o horário e o acerto pendente serão registrados juntos no banco.</div>');
+ modal(historical?'Lançar venda antiga':'Registrar venda',body,
+ '<button class="btn secondary" data-modal-close type="button">Voltar</button>'+
+ '<button type="submit" class="btn" form="sale-form">✓ Salvar venda</button>');
  $('#sale-form').addEventListener('submit',e=>{
   e.preventDefault();
-  try {
+  try{
    const d=Object.fromEntries(new FormData(e.currentTarget));
    const args={
     p_request_id:requestId,p_brand:d.brand,p_model:d.model,
-    p_amperage_ah:d.amperage?Number(d.amperage):null,
-    p_serial_number:d.serial||null,
-    p_transfer_price_cents:cents(d.transfer),
-    p_recovery_cost_cents:cents(d.recovery),
-    p_sale_price_cents:cents(d.price),
-    p_customer_name:d.customer,p_payment_method:d.method,
-    p_warranty_days:Number(d.warranty),
-    p_customer_phone:d.phone||null,
-    p_vehicle_plate:d.plate||null,p_notes:d.notes||null
+    p_amperage_ah:d.amperage?Number(d.amperage):null,p_serial_number:d.serial||null,
+    p_transfer_price_cents:cents(d.transfer),p_recovery_cost_cents:cents(d.recovery),
+    p_sale_price_cents:cents(d.price),p_customer_name:d.customer,
+    p_payment_method:d.method,p_warranty_days:Number(d.warranty),
+    p_customer_phone:d.phone||null,p_vehicle_plate:d.plate||null,p_notes:d.notes||null
    };
-   void runRpc('register_direct_battery_sale',args,'Venda registrada! O acerto já aparece como pendente para Sandro.');
-  } catch(err) {toast(explain(err),'error');}
+   if(historical){
+    if(!d.sold_when)throw new Error('Informe a data e a hora da venda antiga.');
+    const paid=cents(d.already_paid);
+    if(paid>cents(d.transfer))throw new Error('O valor já pago não pode superar o devido ao Sandro.');
+    if(paid>0&&!d.paid_when)throw new Error('Informe a data e a hora do pagamento antigo.');
+    if(paid===0&&d.paid_when)throw new Error('Informe o valor pago ou apague a data do pagamento.');
+    if(d.paid_when&&d.paid_when<d.sold_when)throw new Error('O acerto não pode ocorrer antes da venda.');
+    args.p_sold_at_local=d.sold_when;
+    args.p_prior_paid_cents=paid;
+    args.p_paid_at_local=d.paid_when||null;
+   }
+   void runRpc(historical?'register_historical_battery_sale':'register_direct_battery_sale',args,
+    historical?'Venda antiga salva no mês correto, com o acerto correspondente.':
+     'Venda registrada! O acerto aparece para Sandro.');
+  }catch(err){toast(explain(err),'error');}
  });
 }
 function openEditSale(s){
