@@ -605,24 +605,41 @@ function openBatch(){
   void runRpc('settle_used_batteries_batch',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
  });
 }
-function openExpense(x=null){
- if(!canExpense())return toast('Seu perfil não pode registrar despesas.','error');
+function openExpense(x=null,historical=false){
+ if(!canExpense())return toast('Seu perfil não pode registrar despesas da WS.','error');
  const creating=!x;
  const today=dayKey(new Date());
  const body='<form id="expense-form" class="field-grid">'+
- (creating?selectField('Categoria','category',Object.entries(CATEGORIES), 'gasoline')+
- field('Data da despesa','spent','date',today,'required max="'+today+'"'):'')+
- field(creating?'Valor (R$)':'Novo valor corrigido (R$)','amount','number',fromCents(x?.amount_cents||0),'min="0" step="0.01" required')+
- (creating?field('Descrição (ex.: gasolina para entrega)','description','text','','maxlength="300" required'):field('Motivo da correção','reason','text','','minlength="5" required'))+
+ (creating?
+  (historical?'<div class="note wide">Informe quando o gasto aconteceu. Se não souber o horário, deixe-o em branco. O sistema também registrará quando você cadastrou a despesa.</div>':'')+
+  selectField('Categoria','category',Object.entries(CATEGORIES),'gasoline')+
+  field(historical?'Data real do gasto':'Data da despesa','spent','date',historical?'':today,'required max="'+today+'"')+
+  (historical?field('Horário do gasto (opcional)','spent_time','time',''):'')
+  :'')+
+ field(creating?'Valor gasto (R$)':'Valor corrigido (R$)','amount','number',fromCents(x?.amount_cents||0),'min="0.01" step="0.01" required')+
+ (creating?
+  field('Descrição','description','text','','maxlength="300" required'):
+  field('Motivo da correção','reason','text','','minlength="5" required'))+
  '</form>';
- modal(creating?'Registrar despesa':'Corrigir despesa',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="expense-form">Salvar</button>');
+ modal(creating?(historical?'Lançar despesa antiga':'Registrar despesa'):'Corrigir despesa',body,
+ '<button class="btn secondary" type="button" data-modal-close>Voltar</button>'+
+ '<button type="submit" class="btn" form="expense-form">Salvar</button>');
  $('#expense-form').addEventListener('submit',e=>{
-  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
-  const amount=cents(d.amount);
-  if(creating && amount<=0)return toast('A despesa precisa ser maior que zero.','error');
-  const args=creating?{p_category:d.category,p_amount_cents:amount,p_spent_on:d.spent,p_description:d.description}:
-  {p_expense_id:x.id,p_new_amount_cents:amount,p_reason:d.reason};
-  void runRpc(creating?'register_ws_expense':'correct_ws_expense',args,creating?'Despesa lançada.':'Despesa corrigida com auditoria.');
+  e.preventDefault();
+  try{
+   const d=Object.fromEntries(new FormData(e.currentTarget));
+   const amount=cents(d.amount);
+   if(amount<=0)throw new Error('A despesa deve ser maior que zero.');
+   const past=creating&&(historical||d.spent<today);
+   const args=creating?{
+      p_category:d.category,p_amount_cents:amount,p_spent_on:d.spent,p_description:d.description
+   }:{
+      p_expense_id:x.id,p_new_amount_cents:amount,p_reason:d.reason
+   };
+   if(past)args.p_spent_at_local=d.spent_time?d.spent+'T'+d.spent_time:null;
+   void runRpc(creating?(past?'register_ws_expense_historical':'register_ws_expense'):'correct_ws_expense',args,
+    creating?(past?'Gasto antigo lançado na data escolhida.':'Despesa registrada.'):'Despesa corrigida com auditoria.');
+  }catch(err){toast(explain(err),'error');}
  });
 }
 async function fetchReport(){
