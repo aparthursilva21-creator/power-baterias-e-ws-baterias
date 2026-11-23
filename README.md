@@ -50,7 +50,7 @@ Em **Vendas → Lançar venda antiga**, use a data/hora real do negócio e infor
 
 ## Comprovante de venda WS Baterias
 
-Ao confirmar uma venda, o sistema abre automaticamente o comprovante WS (não fiscal). É possível baixar o PDF, imprimir e compartilhar no celular. Uma segunda via pode ser gerada em **Vendas → Notinha WS**. O documento usa o tema azul WS e preserva a privacidade dos valores internos de repasse e custos de recuperação.
+Ao confirmar uma venda, o sistema abre automaticamente o comprovante WS (não fiscal). É possível baixar o PDF, imprimir e compartilhar no celular. Uma segunda via pode ser gerada em **Vendas → Notinha WS**. O documento usa o tema azul WS, destaca **marca/modelo/amperagem da bateria sem códigos internos**, exibe quantidade e preço em formato de comprovante comercial e protege valores internos de repasse e custos de recuperação.
 
 ## Continuidade do aplicativo no celular
 
