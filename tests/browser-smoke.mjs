@@ -149,7 +149,6 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
     });
   },{testRole:userRole,seedDraft});
   await page.goto('http://127.0.0.1:'+port+'/',{waitUntil:'domcontentloaded'});
-  await page.locator('.stat-grid .stat-card').first().waitFor({timeout:10000});
   if(seedDraft){
     await page.locator('#sale-form [name=customer]').waitFor({timeout:10000});
     assert.equal(await page.locator('#sale-form [name=customer]').inputValue(),'Cliente do WhatsApp');
@@ -158,6 +157,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
       'Os campos foram recuperados da conta Google após reiniciar a página');
     await page.close();return;
   }
+  await page.locator('.stat-grid .stat-card').first().waitFor({timeout:10000});
   assert.equal(await page.locator('.stat-card').count(),4,'painel deve ter 4 cartões');
   assert.ok(await page.locator('#pbws-bell').isVisible(),'sininho aparece no painel');
   await page.locator('#pbws-bell').click();
