@@ -1,0 +1,37 @@
+/* Central de notificacoes Power × WS — desktop e celulares */
+.notif-bell{position:relative;display:inline-flex;justify-content:center;align-items:center;flex:0 0 43px;width:43px;height:43px;font-size:20px;padding:7px!important;background:#16241a;border:1px solid #4a7547;transition:transform .2s,border-color .2s}
+.notif-bell:hover{transform:translateY(-2px);border-color:#b5f77e}
+.notif-count{position:absolute;top:-6px;right:-6px;display:grid;place-content:center;min-width:20px;height:20px;padding:0 4px;color:#12230b;background:#b7fb77;font-size:10px;font-weight:900;border-radius:99px;border:2px solid #0e170f}
+.notif-count[hidden]{display:none!important}
+.notif-panel{position:fixed;z-index:51;right:clamp(12px,2.8vw,45px);top:77px;width:min(432px,calc(100vw - 24px));max-height:min(790px,calc(100dvh - 94px));display:flex;flex-direction:column;background:#101b13;border:1px solid #42613c;border-radius:20px;box-shadow:0 25px 90px #000c,0 0 40px #79e42b16;overflow:hidden;animation:lift .18s ease-out both}
+.notif-panel[hidden]{display:none!important}
+.notif-top{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:18px 19px 13px;border-bottom:1px solid #293e2d}
+.notif-top h2{font:800 23px 'Space Grotesk',sans-serif;margin:4px 0 0;letter-spacing:-.045em}
+.notif-top button{min-width:36px;min-height:36px}
+.notif-controls{padding:10px 16px;border-bottom:1px solid #27382a}
+.notif-list{overflow-y:auto;max-height:44dvh;min-height:80px;scrollbar-color:#60854a #122018}
+.notif-entry{display:flex;align-items:flex-start;gap:11px;text-align:left;padding:14px 18px;background:transparent;color:#e8f9e8;border:0;border-bottom:1px solid #28392b;width:100%;transition:background .16s}
+.notif-entry:hover{background:#1b2b1e}
+.notif-entry.unread{background:linear-gradient(90deg,#213c23,#152119)}
+.notif-entry-icon{background:#223e22;color:#b5ff75;border:1px solid #4f7644;border-radius:12px;width:36px;height:36px;display:grid;place-items:center;flex:none;font-weight:800;font-size:18px}
+.notif-entry-text{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.notif-entry-text strong{font-size:12px;line-height:1.35}
+.notif-entry-text>span{color:#c1d5bf;font-size:12px;line-height:1.5}
+.notif-entry-text small{font-size:10px;color:#819c84}
+.notif-empty{color:#a4bba4;font-size:12px;line-height:1.65;text-align:center;padding:36px 24px}
+.notif-push-settings{padding:15px 18px 20px;background:#15231a;border-top:1px solid #314c32}
+.notif-push-settings h3{font-size:13px;margin:0 0 8px}
+.notif-push-settings p{color:#a9c0a7;font-size:11px;line-height:1.55;margin:0 0 12px}
+.notif-push-settings p[data-kind=success]{color:#abf7a3}
+.notif-push-settings p[data-kind=error]{color:#ffb7b9}
+.notif-push-settings .btn{min-height:41px;font-size:12px}
+@media(max-width:850px){
+ .notif-panel{top:67px;bottom:calc(78px + env(safe-area-inset-bottom,0px));right:0;left:0;width:100%;max-height:none;border-radius:0;border:0;border-top:1px solid #496b42;box-shadow:0 -5px 35px #0009}
+ .notif-top{padding:15px 18px 12px}
+ .notif-list{max-height:none;flex:1;min-height:100px}
+ .notif-push-settings{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+ .notif-entry{min-height:75px}
+ .notif-bell{height:37px;width:37px;flex-basis:37px;min-height:37px;font-size:18px}
+ .notif-push-settings .btn{flex:1}
+}
+@media(max-width:360px){.notif-bell{height:35px;width:35px;flex-basis:35px}.account-pill{max-width:75px}}
