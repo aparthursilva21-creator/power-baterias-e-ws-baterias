@@ -306,6 +306,70 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   assert.ok(await page.locator('#monthly-report').isVisible(),'relatório mensal renderiza');
   await page.close();
 }
+// Verifica o bug real: Supabase emite SIGNED_IN novamente ao voltar do WhatsApp.
+// Esse evento NÃO deve desmontar um formulário que já está sendo preenchido.
+async function authResumeScenario(){
+ const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});
+ page.on('pageerror',err=>failures.push('Auth refocus: '+err.message));
+ await page.route('https://fonts.googleapis.com/**',route=>route.abort());
+ await page.route('https://fonts.gstatic.com/**',route=>route.abort());
+ await page.addInitScript(()=>{
+  const mockUser={id:'00000000-0000-4000-8000-000000000003',email:'wanderson@example.test'};
+  window.__authReadyEvents=0;
+  window.addEventListener('pbws:ready',()=>{window.__authReadyEvents++;});
+  const fake={
+   auth:{
+    getUser(){return Promise.resolve({data:{user:mockUser},error:null});},
+    onAuthStateChange(callback){
+     window.__authStateCallback=callback;
+     queueMicrotask(()=>callback('INITIAL_SESSION',{user:mockUser}));
+     return {data:{subscription:{unsubscribe(){}}}};
+    },
+    signOut(){return Promise.resolve({error:null});}
+   },
+   rpc(name){
+    if(name==='is_authorized_user')return Promise.resolve({data:true,error:null});
+    if(name==='current_app_role')return Promise.resolve({data:'ws',error:null});
+    if(name==='get_power_ws_team')return Promise.resolve({data:[],error:null});
+    return Promise.resolve({data:{},error:null});
+   },
+   from(){
+    return {
+      select(){return this;},order(){return this;},limit(){return this;},eq(){return this;},
+      upsert(){return Promise.resolve({error:null});},
+      delete(){return this;},
+      then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject);}
+    };
+   },
+   channel(){return{on(){return this;},subscribe(){return this;}};},
+   removeChannel(){return Promise.resolve();}
+  };
+  window.__testSupabase=fake;
+  window.__testUser=mockUser;
+ });
+ await page.route('https://esm.sh/@supabase/supabase-js@2.49.1',route=>
+  route.fulfill({status:200,contentType:'text/javascript',
+   headers:{'access-control-allow-origin':'*'},
+   body:'export function createClient() { return window.__testSupabase; }'}));
+ await page.goto('http://127.0.0.1:'+port+'/',{waitUntil:'domcontentloaded'});
+ await page.locator('[data-act="new-sale"]').waitFor({timeout:12000});
+ await page.locator('[data-act="new-sale"]').click();
+ await page.locator('#sale-form [name=customer]').fill('Cliente anotado do WhatsApp');
+ await page.locator('#sale-form [name=price]').fill('199.90');
+ await page.evaluate(()=>{
+   window.__authStateCallback('SIGNED_IN',{user:window.__testUser});
+   window.__authStateCallback('TOKEN_REFRESHED',{user:window.__testUser});
+ });
+ await page.waitForTimeout(500);
+ assert.equal(await page.locator('#sale-form [name=customer]').inputValue(),
+  'Cliente anotado do WhatsApp','SIGN_IN repetido não apaga cliente digitado');
+ assert.equal(await page.locator('#sale-form [name=price]').inputValue(),'199.90',
+  'Troca de aplicativo não apaga preço digitado');
+ assert.equal(await page.evaluate(()=>window.__authReadyEvents),1,
+  'A sessão ativa não deve reinicializar o painel ao retomar foco');
+ await page.close();
+}
+
 try{
   await scenario(390,844);
   await scenario(1440,900);
@@ -320,6 +384,7 @@ try{
     form_data:{brand:'Moura',model:'60Ah',customer:'Cliente do WhatsApp',
       price:'224.90',transfer:'80.00'}
   });
+  await authResumeScenario();
   assert.deepEqual(failures,[],'erros JavaScript em execução');
   console.log('PASSOU: login simulado, dashboard, mobile, vendas, lote, despesas e relatórios');
 }finally{
