@@ -209,6 +209,9 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
     await page.close();return;
   }
   await page.locator(side+' [data-view="sales"]').click();
+  const initialSaleText=await page.locator('#app-main').innerText();
+  assert.match(initialSaleText,/Moura\s*60Ah/,'Lista de vendas mostra marca/modelo');
+  assert.doesNotMatch(initialSaleText,/WS-000001/,'Códigos internos não aparecem na lista');
   await page.locator('[data-act="new-sale"]').click();
   assert.ok(await page.locator('#sale-form').isVisible(),'formulário de venda acessível');
   assert.equal(await page.locator(side+' [data-view="batteries"]').count(),0,'menu Estoque não existe');
@@ -238,12 +241,19 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   assert.match(await page.locator('.ws-receipt').innerText(),/WS BATERIAS/);
   assert.match(await page.locator('.ws-receipt').innerText(),/DOCUMENTO NÃO FISCAL/);
   assert.match(await page.locator('.ws-receipt').innerText(),/R\$\s*200,00/);
+  const contentWS=await page.locator('.ws-receipt').innerText();
+  assert.match(contentWS,/BATERIA VENDIDA/);
+  assert.match(contentWS,/Moura\s*60Ah/,'Notinha destaca a bateria pelo nome');
+  assert.match(contentWS,/DESCRIÇÃO[\s\S]*QTD\./,'A notinha tem tabela comercial');
+  assert.doesNotMatch(contentWS,/WS-0000\d+|Referência da venda|Código da bateria/,
+    'A notinha não mostra identificador interno');
   assert.doesNotMatch(await page.locator('.ws-receipt').innerText(),/Repasse|recuperação \(R\$\)/i);
   const [pdfDownload]=await Promise.all([
     page.waitForEvent('download',{timeout:15000}),
     page.locator('[data-receipt-action="download"]').click()
   ]);
-  assert.match(pdfDownload.suggestedFilename(),/^WS-Baterias-Comprovante-.*\.pdf$/);
+  assert.match(pdfDownload.suggestedFilename(),/^WS-Baterias-Moura-60Ah-.*\.pdf$/);
+  assert.doesNotMatch(pdfDownload.suggestedFilename(),/WS-000/);
   const pdfStream=await pdfDownload.createReadStream();
   const pdfParts=[];for await (const part of pdfStream)pdfParts.push(part);
   const pdfBinary=Buffer.concat(pdfParts);
@@ -253,6 +263,8 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   await page.locator('#modal-close').click();
   await page.locator('[data-act="ws-receipt"]').last().click();
   assert.ok(await page.locator('.ws-receipt').isVisible(),'segunda via pelo histórico');
+  assert.doesNotMatch(await page.locator('.ws-receipt').innerText(),/WS-0000\d+/);
+  assert.match(await page.locator('.ws-receipt').innerText(),/Moura\s*60Ah/);
   await page.locator('#modal-close').click();
   await page.locator('[data-act="new-historical-sale"]').click();
   assert.ok(await page.locator('#sale-form [name=sold_when]').isVisible(),'data e hora para venda antiga');
@@ -289,6 +301,8 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   await page.locator(side+' [data-view="activity"]').click();
   const activityText=await page.locator('#app-main').innerText();
   assert.match(activityText,/Data e horário corrigidos/);
+  assert.match(activityText,/Moura\s*60Ah/,'Histórico usa marca e modelo');
+  assert.doesNotMatch(activityText,/WS-0000\d+/,'Histórico não mostra códigos de baterias');
   assert.match(activityText,/ANTES: .* → DEPOIS: /);
   assert.match(activityText,/09\/02\/2025/);
   await page.locator(side+' [data-view="sales"]').click();
