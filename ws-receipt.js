@@ -26,9 +26,14 @@ function details(s,b){
   phone:val(s.customer_phone),plate:val(s.vehicle_plate),
   price:Number(s.sale_price_cents),payment:payments[s.payment_method]||'Outro',
   warranty:Number(s.warranty_days)||0,
-  soldAt:stamp(s.sold_at),soldDate:new Intl.DateTimeFormat('en-CA',{
-   timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'
-  }).format(new Date(s.sold_at)),
+  soldAt:stamp(s.sold_at),
+  soldDate:(()=>{
+   const parts=new Intl.DateTimeFormat('en-GB',{
+    timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'
+   }).formatToParts(new Date(s.sold_at));
+   const get=type=>parts.find(x=>x.type===type)?.value||'00';
+   return get('year')+'-'+get('month')+'-'+get('day');
+  })(),
   notes:val(s.notes),issuedAt:stamp(new Date())
  };
 }
@@ -132,7 +137,7 @@ function paint(data){
  rect(48,435,624,90,PALE);
  rect(48,435,6,90,BLUE);
  wrap(data.productName,70,468,574,23,INK,27,2,850);
- text('Bateria usada / recuperada',70,504,13,SLATE,550);
+ text('Bateria usada / recuperada',70,518,12,SLATE,550);
 
  // Quadro de itens, como em um comprovante de loja, sem nenhum código interno.
  const yy=547;
