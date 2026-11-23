@@ -162,6 +162,7 @@ async function scenario(width,height,userRole='admin'){
   await page.locator('#sale-form [name=transfer]').fill('60.00');
   await page.locator('#sale-form [name=recovery]').fill('15.00');
   await page.locator('#sale-form [name=customer]').fill('Cliente de teste');
+  await page.locator('#sale-form [name=notes]').fill('Observação importante sobre instalação e garantia. '.repeat(9));
   await page.locator('#sale-form button[type=submit]').count(); // formulário tem botão externo
   await page.locator('.dialog-footer button[form="sale-form"]').click();
   await page.waitForFunction(()=>!!window.lastSaleArgs);
@@ -184,6 +185,7 @@ async function scenario(width,height,userRole='admin'){
   const pdfBinary=Buffer.concat(pdfParts);
   assert.ok(pdfBinary.length>12000,'PDF gerado realmente contém uma página');
   assert.equal(pdfBinary.subarray(0,8).toString('utf8'),'%PDF-1.4');
+  assert.ok(pdfBinary.toString('latin1').includes('/Count 2'),'Observações extensas geram anexo completo no PDF');
   await page.locator('#modal-close').click();
   await page.locator('[data-act="ws-receipt"]').last().click();
   assert.ok(await page.locator('.ws-receipt').isVisible(),'segunda via pelo histórico');
