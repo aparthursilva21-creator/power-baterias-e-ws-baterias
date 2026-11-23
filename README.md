@@ -6,6 +6,8 @@ Sistema privado de **lançamento direto de vendas de baterias usadas**, garantia
 
 **[Guia de ativação do banco e do celular](docs/ATIVACAO_FINAL.md)**
 
+**[Notificações: sininho, cobrança de acertos e Push no Android/iPhone](docs/NOTIFICACOES.md)**
+
 ## Arquitetura
 
 - HTML, CSS e JavaScript sem build, hospedados no GitHub Pages;
@@ -29,3 +31,7 @@ Os testes são executados em **GitHub Actions**. Eles não substituem a homologa
 ## Venda direta (sem estoque)
 
 Em **Vendas → Registrar venda**, o vendedor informa a bateria, o preço real, o valor devido ao Sandro, o custo de recuperação, o cliente e a garantia. A transação registra tudo em um único lançamento, com horário e autor gerados pelo banco. O Sandro recebe o acerto pendente automaticamente. A migração `006_direct_sale_no_stock.sql` desabilita as antigas funções de cadastro de estoque para clientes autenticados.
+
+## Notificações
+
+A cada venda registrada, Sandro recebe um aviso; ao confirmar um acerto, Wanderson recebe a confirmação. Sandro pode enviar lembrete manual pela aba **Acertos → Cobrar WS**. Existe um resumo automático de pendências às **09h (Brasília)**, apenas quando há acertos em aberto. O sininho guarda os avisos mesmo que o Push seja bloqueado. Para recebê-los na tela bloqueada, cada usuário deve ativar Push no próprio celular.
