@@ -10,7 +10,7 @@ test('arquivos essenciais presentes',()=>{
  'supabase/002_used_batteries_schema.sql','supabase/003_used_batteries_operations.sql',
  'supabase/004_batches_expenses_reports.sql','supabase/005_staff_realtime.sql',
  'supabase/006_direct_sale_no_stock.sql',
- 'supabase/007_notifications.sql','supabase/008_push_dispatch.sql','sw.js',
+ 'supabase/007_notifications.sql','supabase/008_push_dispatch.sql','supabase/010_sale_edit_cancel.sql','supabase/011_test_reset_log.sql','sw.js',
  'notifications.js','notifications.css','supabase/functions/pbws-push/index.ts']){
   assert.ok(existsSync(new URL(path,root)), 'Ausente: '+path);
  }
@@ -49,6 +49,9 @@ test('aplicativo real usa banco remoto, não localStorage',()=>{
  assert.doesNotMatch(js,/localStorage|sessionStorage/);
  assert.match(js,/postgres_changes/);
  assert.match(js,/pbws_remind_ws/);
+ assert.match(js,/correct_used_battery_sale/);
+ assert.match(js,/cancel_used_battery_sale/);
+ assert.match(js,/used_sale_revisions/);
  assert.match(read('notifications.js'),/pbws_save_push_subscription/);
  assert.match(read('sw.js'),/showNotification/);
  assert.match(read('index.html'),/id="pbws-bell"/);
