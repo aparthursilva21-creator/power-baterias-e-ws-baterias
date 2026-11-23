@@ -32,6 +32,13 @@ async function scenario(width,height,userRole='admin'){
   page.on('pageerror',err=>{failures.push('JS '+width+': '+err.message);console.error('BROWSER SCRIPT ERROR '+width,err.stack||err.message);});
   page.on('console',msg=>{if(msg.type()==='error')console.error('BROWSER CONSOLE '+width,msg.text());});
   page.on('requestfailed',req=>{if(req.url().includes('ws-receipt'))console.error('RECEIPT RESOURCE ERROR',req.url(),req.failure()?.errorText);});
+  const debugSession=await page.context().newCDPSession(page);
+  await debugSession.send('Runtime.enable');
+  debugSession.on('Runtime.exceptionThrown',info=>{
+    const e=info.exceptionDetails||{};
+    console.error('CHROME PARSE LOCATION',JSON.stringify({url:e.url,line:e.lineNumber,column:e.columnNumber,
+      text:e.text,description:e.exception?.description,scriptId:e.scriptId}));
+  });
   await page.route('**/auth.js*',route=>route.fulfill({status:200,contentType:'text/javascript',body:''}));
   await page.route('https://fonts.googleapis.com/**',route=>route.abort());
   await page.route('https://fonts.gstatic.com/**',route=>route.abort());
