@@ -20,7 +20,7 @@ Abra **Vendas → Lançar venda antiga**.
 
 O sistema coloca a venda no mês de ocorrência e o pagamento no mês em que foi efetivamente feito. Se o pagamento foi total, a bateria aparece como **Acertada**; se foi parcial, continua pendente somente o restante.
 
-**Acesso:** Wanderson, Arthur e Sandro podem lançar vendas antigas. Sandro não recebe permissão para registrar vendas do dia feitas pela WS. Quem registrou a venda histórica e quando fica identificado.
+**Acesso:** Wanderson, Arthur e Sandro podem lançar vendas antigas. Sandro não recebe permissão para registrar vendas do dia feitas pela WS. Cada um pode corrigir suas próprias vendas antigas, inclusive a data, sempre explicando o motivo. Arthur pode corrigir qualquer lançamento.
 
 **Não são aceitas datas futuras.** Use as datas efetivas de negócios já ocorridos; não altere o relógio do celular.
 
@@ -45,7 +45,7 @@ Abra **Despesas → Gasto antigo**. Arthur deve selecionar primeiro **WS Bateria
 
 ## Observação sobre correções
 
-Os botões **Corrigir** e **Cancelar** mantêm o histórico. O ajuste da **data original** de uma importação deve ser feito com cuidado, pois interfere em relatórios, garantia e acertos. Se uma data histórica for lançada errada, avise Arthur antes de marcar pagamentos ligados ao registro.
+Os botões **Corrigir** e **Cancelar** mantêm o histórico. Ao corrigir uma **venda antiga**, o formulário permite ajustar também sua data e hora originais, exigindo justificativa e impedindo que a venda fique posterior a um pagamento antigo já registrado. Essas mudanças podem alterar relatórios e garantia; confira antes de salvar.
 
 ## Implantação
 
