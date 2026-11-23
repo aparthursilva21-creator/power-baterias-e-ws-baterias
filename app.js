@@ -682,8 +682,7 @@ function openSale(historical=false,restored=null){
    const customDate=!!d.sold_when;
    if(historical && !customDate)throw new Error('Informe a data e a hora da venda antiga.');
    if(customDate){
-    const candidate=new Date(d.sold_when+':00-03:00');
-    if(!Number.isFinite(candidate.getTime())||candidate.getTime()>Date.now())
+    if(d.sold_when > brazilLocalNow())
       throw new Error('A venda não pode ter data ou hora futuras.');
     args.p_sold_at_local=d.sold_when;
    }
