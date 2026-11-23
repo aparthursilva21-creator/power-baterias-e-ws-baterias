@@ -1,13 +1,12 @@
 /* Power Baterias × WS Baterias
    Operação remota: Supabase Auth + RLS + funções SQL transacionais.
-   Sem armazenamento local para vendas, estoque ou dinheiro.
+   Sem armazenamento local para vendas ou dinheiro.
 */
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const BR_TIMEZONE = 'America/Sao_Paulo';
 const MENU = [
   ['dashboard', '◫', 'Início'],
-  ['batteries', '▤', 'Baterias'],
   ['sales', '▣', 'Vendas'],
   ['settlements', '⇄', 'Acertos'],
   ['expenses', '◈', 'Despesas'],
@@ -17,7 +16,6 @@ const MENU = [
 ];
 const CATEGORIES = { gasoline: 'Gasolina', delivery: 'Entregas', recovery_parts: 'Peças de recuperação', materials: 'Materiais', other: 'Outros' };
 const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Transferência', other: 'Outro' };
-const STATUS = { received: 'Recebida', restoring: 'Em recuperação', available: 'Disponível', sold: 'Vendida', discarded: 'Descartada' };
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = 'dashboard';
 let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [] };
@@ -195,10 +193,10 @@ async function loadAll(silent=false) {
 }
 function render() {
   if(!api||!ready) return;
-  nav(); const titlesDetails={dashboard:'A operação em tempo real',batteries:'Controle individual de baterias usadas',sales:'Todas as vendas registradas',settlements:'Valores devidos à Power após as vendas',expenses:'Custos operacionais da WS',reports:'Fechamento financeiro e indicadores',warranties:'Garantias e prazos registrados',activity:'Registro de alterações e responsáveis'};
+  nav(); const titlesDetails={dashboard:'A operação em tempo real',sales:'Todas as vendas registradas',settlements:'Valores devidos à Power após as vendas',expenses:'Custos operacionais da WS',reports:'Fechamento financeiro e indicadores',warranties:'Garantias e prazos registrados',activity:'Registro de alterações e responsáveis'};
   $('#heading').textContent=titles[current] || 'Visão geral';
   $('#subtitle').textContent=titlesDetails[current]||'Controle compartilhado';
-  const fn={dashboard:dashboardView,batteries:batteryView,sales:salesView,settlements:settlementView,expenses:expenseView,reports:reportView,warranties:warrantyView,activity:activityView}[current]||dashboardView;
+  const fn={dashboard:dashboardView,sales:salesView,settlements:settlementView,expenses:expenseView,reports:reportView,warranties:warrantyView,activity:activityView}[current]||dashboardView;
   $('#app-main').innerHTML='<div class="page-stack">'+fn()+'</div>';
 }
 function dashboardView() {
@@ -206,7 +204,6 @@ function dashboardView() {
   const recent=rows.sales.filter(s=>monthKey(s.sold_at)===nowMonth);
   const revenue=recent.reduce((a,s)=>a+Number(s.sale_price_cents),0);
   const debt=rows.settlements.reduce((a,s)=>a+remaining(s),0);
-  const available=rows.batteries.filter(b=>b.status==='available').length;
   const pending=rows.settlements.filter(s=>remaining(s)>0).length;
   const salesHtml=rows.sales.slice(0,6).map(s=>{
     const b=battery(s.battery_id), st=settleFor(s.battery_id), sts=settlingStatus(st);
@@ -217,19 +214,10 @@ function dashboardView() {
     return '<div class="list-entry"><div><strong>'+esc(b?.code||shortId(s.id))+'</strong><small>'+esc(b?.brand||'')+' · '+esc(b?.model||'')+'</small></div><strong class="accent">'+brl(remaining(s))+'</strong></div>';
   }).join('')||'<div class="empty">Nenhum acerto pendente.</div>';
   return heading('Visão geral','Tudo o que acontece na operação fica registrado e sincronizado.',button('↻ Atualizar','refresh','secondary'))+
-  '<div class="stat-grid">'+stat('Vendas deste mês',brl(revenue),true)+stat('Baterias disponíveis',String(available))+stat('Acertos pendentes',brl(debt),true)+stat('Baterias aguardando acerto',String(pending))+'</div>'+
+  '<div class="stat-grid">'+stat('Vendas deste mês',brl(revenue),true)+stat('Vendas realizadas no mês',String(recent.length))+stat('Acertos pendentes',brl(debt),true)+stat('Baterias aguardando acerto',String(pending))+'</div>'+
   '<div class="grid-2">'+panel('Vendas recentes','<div class="panel-body lined-list">'+salesHtml+'</div>',button('Ver vendas','sales','secondary tiny'))+
   panel('A receber · Power','<div class="panel-body lined-list">'+pendingHtml+'</div>',button('Abrir acertos','settlements','secondary tiny'))+'</div>'+
   '<div class="note">Os valores financeiros e horários são consultados no banco Supabase. Horários exibidos em Brasília (UTC−3). '+(canPay()?'Você pode conciliar pagamentos.':'O Sandro controla e confirma os repasses.')+'</div>';
-}
-function batteryView(){
- const actions=canSell()?button('+ Cadastrar bateria','new-battery'):'';
- const content=rows.batteries.map(b=>{
-  const action=canSell() && !['sold','discarded'].includes(b.status)?'<button type="button" class="btn tiny secondary" data-act="edit-battery" data-id="'+b.id+'">Editar</button>':'—';
-  return '<tr><td><div class="cell-main">'+esc(b.code)+'</div><div class="cell-sub">'+stamp(b.created_at)+'</div></td><td>'+esc(b.brand)+' '+esc(b.model)+'<div class="cell-sub">'+(b.amperage_ah?esc(b.amperage_ah)+'Ah · ':'')+esc(b.serial_number||'Sem série')+'</div></td><td>'+brl(b.transfer_price_cents)+'</td><td>'+brl(b.recovery_cost_cents)+'</td><td>'+brl(b.asking_price_cents)+'</td><td>'+statusBadge(STATUS[b.status]||b.status,b.status==='available'?'green':b.status==='sold'?'gray':'yellow')+'</td><td>'+action+'</td></tr>';
- }).join('');
- return heading('Baterias','Recebimento, recuperação, disponibilidade e histórico. O repasse só nasce após a venda.',actions)+
- panel('Estoque compartilhado',tbl(['Bateria / Cadastro','Identificação','Repasse Power','Recuperação','Venda sugerida','Status','Ações'],content));
 }
 function salesView(){
  const content=rows.sales.map(s=>{
@@ -330,8 +318,6 @@ document.addEventListener('click',async e=>{
  if(titles[act]){current=act;report=null;render();if(act==='reports')void fetchReport();return;}
  try {
   if(act==='refresh')await loadAll(true);
-  if(act==='new-battery')openBattery();
-  if(act==='edit-battery')openBattery(battery(btn.dataset.id));
   if(act==='new-sale')openSale();
   if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
   if(act==='batch-settle')openBatch();
@@ -350,63 +336,46 @@ document.addEventListener('change',e=>{
   reportMonth=e.target.value;report=null;render();void fetchReport();
  }
 });
-function openBattery(b=null){
- if(!canSell())return toast('Seu perfil não pode editar baterias.','error');
- const creation=!b;
- const currentStatus=b?.status||'received';
- const statuses=[['received','Recebida'],['restoring','Em recuperação'],['available','Disponível'],['discarded','Descartada']];
- const body='<form id="battery-form" class="field-grid">'+
- field('Marca','brand','text',b?.brand||'','maxlength="100" required')+
- field('Modelo / Tipo','model','text',b?.model||'','maxlength="120" required')+
- field('Amperagem (Ah)','amperage','number',b?.amperage_ah||'','min="1" max="500"')+
- (creation?field('Número de série (opcional)','serial','text','','maxlength="120"'): '')+
- field('Valor combinado com Sandro (R$)','transfer','number',fromCents(b?.transfer_price_cents||0),'min="0.01" step="0.01" required')+
- field('Custo de recuperação (R$)','recovery','number',fromCents(b?.recovery_cost_cents||0),'min="0" step="0.01" required')+
- field('Preço de venda previsto (R$)','price','number',fromCents(b?.asking_price_cents||0),'min="0" step="0.01" required')+
- (!creation?selectField('Situação','status',statuses,currentStatus):'')+
- '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200">'+esc(b?.notes||'')+'</textarea></label></form>'+
- '<div class="note" style="margin-top:15px">Receber uma bateria não cria dívida. O acerto será gerado automaticamente após a venda.</div>';
- modal(creation?'Nova bateria':'Editar bateria '+b.code,body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button form="battery-form" type="submit" class="btn">Salvar bateria</button>');
- $('#battery-form').addEventListener('submit',e=>{
-  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
-  const args=creation?{
-   p_brand:d.brand,p_model:d.model,p_transfer_price_cents:cents(d.transfer),
-   p_asking_price_cents:cents(d.price),p_amperage_ah:d.amperage?Number(d.amperage):null,
-   p_serial_number:d.serial||null,p_notes:d.notes||null,p_recovery_cost_cents:cents(d.recovery)
-  }:{
-   p_battery_id:b.id,p_status:d.status,p_transfer_price_cents:cents(d.transfer),
-   p_recovery_cost_cents:cents(d.recovery),p_asking_price_cents:cents(d.price),p_note:d.notes
-  };
-  void runRpc(creation?'register_used_battery':'update_used_battery',args,'Bateria salva no banco.');
- });
-}
 function openSale(){
  if(!canSell())return toast('Seu perfil não pode registrar vendas.','error');
- const available=rows.batteries.filter(b=>b.status==='available');
- if(!available.length)return toast('Cadastre e marque uma bateria como disponível antes de vender.','error');
- const choices=available.map(b=>[b.id,b.code+' · '+b.brand+' '+b.model+' — '+brl(b.asking_price_cents)]);
- const first=available[0];
+ // Um identificador por lançamento permite repetir a mesma solicitação com segurança.
+ const requestId=crypto.randomUUID();
  const body='<form id="sale-form" class="field-grid">'+
- selectField('Bateria disponível','battery',choices,first.id)+
- field('Valor real de venda (R$)','price','number',fromCents(first.asking_price_cents),'min="0.01" step="0.01" required')+
+ '<div class="field wide" style="margin-bottom:2px"><span class="eyebrow">Bateria vendida</span><span class="muted mini">Preencha os dados da bateria na própria venda. Não há cadastro de estoque.</span></div>'+
+ field('Marca da bateria','brand','text','','maxlength="100" required autocomplete="off"')+
+ field('Modelo / Tipo','model','text','','maxlength="120" required')+
+ field('Amperagem (Ah, opcional)','amperage','number','','min="1" max="500" step="1"')+
+ field('Número de série (opcional)','serial','text','','maxlength="120"')+
+ field('Valor da venda (R$)','price','number','','min="0.01" step="0.01" required inputmode="decimal"')+
+ field('Valor devido ao Sandro (R$)','transfer','number','','min="0.01" step="0.01" required inputmode="decimal"')+
+ field('Gasto na recuperação (R$)','recovery','number','0.00','min="0" step="0.01" required inputmode="decimal"')+
+ '<div class="field wide" style="margin:8px 0 2px"><span class="eyebrow">Cliente e garantia</span></div>'+
  field('Nome do cliente','customer','text','','maxlength="160" required')+
  field('Telefone (opcional)','phone','tel','','maxlength="30"')+
  field('Placa (opcional)','plate','text','','maxlength="15"')+
  selectField('Forma de pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],'pix')+
  field('Garantia em dias','warranty','number','30','min="0" max="365" step="1" required')+
- '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
- '<div class="note" style="margin-top:15px">Ao salvar, o servidor registra a data/hora, dá baixa no estoque e gera o acerto pendente para Sandro. Não clique duas vezes.</div>';
- modal('Registrar venda',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="sale-form">Confirmar venda</button>');
- $('#sale-form').addEventListener('change',e=>{
-  if(e.target.name==='battery'){const b=battery(e.target.value);if(b)$('#sale-form [name=price]').value=fromCents(b.asking_price_cents);}
- });
+ '<label class="field wide"><span>Observações (opcional)</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
+ '<div class="note" style="margin-top:15px">A venda e a bateria serão lançadas juntas, com data/hora do servidor. O acerto com Sandro ficará pendente imediatamente. Nenhum estoque será movimentado.</div>';
+ modal('Registrar venda de bateria',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="sale-form">✓ Confirmar venda</button>');
  $('#sale-form').addEventListener('submit',e=>{
-  e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
-  void runRpc('register_used_battery_sale',{
-   p_battery_id:d.battery,p_customer_name:d.customer,p_sale_price_cents:cents(d.price),
-   p_payment_method:d.method,p_warranty_days:Number(d.warranty),
-   p_customer_phone:d.phone||null,p_vehicle_plate:d.plate||null,p_notes:d.notes||null
-  },'Venda salva! Acerto pendente criado para Sandro.');
+  e.preventDefault();
+  try {
+   const d=Object.fromEntries(new FormData(e.currentTarget));
+   const args={
+    p_request_id:requestId,p_brand:d.brand,p_model:d.model,
+    p_amperage_ah:d.amperage?Number(d.amperage):null,
+    p_serial_number:d.serial||null,
+    p_transfer_price_cents:cents(d.transfer),
+    p_recovery_cost_cents:cents(d.recovery),
+    p_sale_price_cents:cents(d.price),
+    p_customer_name:d.customer,p_payment_method:d.method,
+    p_warranty_days:Number(d.warranty),
+    p_customer_phone:d.phone||null,
+    p_vehicle_plate:d.plate||null,p_notes:d.notes||null
+   };
+   void runRpc('register_direct_battery_sale',args,'Venda registrada! O acerto já aparece como pendente para Sandro.');
+  } catch(err) {toast(explain(err),'error');}
  });
 }
 function openSettlement(s) {
