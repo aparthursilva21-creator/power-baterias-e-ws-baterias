@@ -31,7 +31,6 @@ begin
   );
   select id into v_pending from public.used_battery_settlements where sale_id=v_sale;
 
-  perform set_config('request.jwt.claim.sub',v_power::text,true);
   blocked:=false;
   begin
     perform public.pbws_remind_ws(array[v_pending]);
@@ -46,12 +45,14 @@ begin
   where recipient_id=v_ws and kind='reminder';
   if n<>1 then raise exception 'Lembrete nao chegou na caixa da WS'; end if;
 
+  perform set_config('request.jwt.claim.sub',v_power::text,true);
   blocked:=false;
   begin
     perform public.pbws_remind_ws(array[v_pending]);
   exception when others then blocked:=true; end;
   if not blocked then raise exception 'Lembrete duplicado nao foi barrado'; end if;
 
+  perform set_config('request.jwt.claim.sub',v_ws::text,true);
   select count(*) into n from public.pbws_notifications
    where recipient_id=v_ws and read_at is not null;
   if n<>0 then raise exception 'Notificacoes WS iniciaram lidas'; end if;
