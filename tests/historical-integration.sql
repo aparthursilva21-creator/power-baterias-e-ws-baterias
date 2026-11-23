@@ -8,6 +8,8 @@ declare
   v_date timestamp;v_paydate timestamp;
   v_st public.used_battery_settlements%rowtype;
   v_report jsonb;v_n integer;v_blocked boolean;
+  v_before_amount bigint;v_after_amount bigint;
+  v_orig_sold timestamptz;v_orig_registered timestamptz;
 begin
   v_date:=date_trunc('day',(now() at time zone 'America/Sao_Paulo')-interval '65 days')+interval '11 hours 20 minutes';
   v_paydate:=v_date+interval '5 days 3 hours';
@@ -133,6 +135,42 @@ begin
     where id=v_new and not is_historical and recorded_by=v_ws;
   if v_n<>1 then raise exception 'Venda normal parou de funcionar após migração'; end if;
 
-  raise notice 'PASSOU: venda antiga WS/Power, pagamentos, despesas, mês certo, duplicidade e auditoria';
+  -- Agora QUALQUER venda pode ter data/hora corrigida, mesmo que tenha sido normal.
+  -- A venda muda de competencia, mas cadastro original e auditoria ficam imutaveis.
+  select (public.get_power_ws_monthly_report(v_date::date)->>'sales_revenue_cents')::bigint
+    into v_before_amount;
+  select sold_at,recorded_at into v_orig_sold,v_orig_registered
+    from public.used_battery_sales where id=v_new;
+  perform public.correct_used_battery_sale(
+    v_new,jsonb_build_object('sold_at_local',
+      to_char(v_date+interval '2 hours','YYYY-MM-DD"T"HH24:MI')),
+    'Data antiga informada pelo cliente no WhatsApp');
+  select count(*) into v_n from public.used_battery_sales
+    where id=v_new and (sold_at at time zone 'America/Sao_Paulo')=v_date+interval '2 hours'
+      and recorded_at=v_orig_registered and sold_by=v_ws;
+  if v_n<>1 then raise exception 'Corrigir venda normal alterou autor, cadastro ou data errada';end if;
+  select (public.get_power_ws_monthly_report(v_date::date)->>'sales_revenue_cents')::bigint
+    into v_after_amount;
+  if v_after_amount-v_before_amount<>12000 then
+    raise exception 'Venda corrigida nao mudou o relatorio para o mes da venda';end if;
+
+  select count(*) into v_n from public.used_sale_revisions
+   where sale_id=v_new and action='corrected' and actor_id=v_ws
+     and occurred_at>=v_orig_registered
+     and before_data->'sale'->>'sold_at' = to_jsonb(v_orig_sold)#>>'{}'
+     and after_data->'sale'->>'sold_at' <> before_data->'sale'->>'sold_at'
+     and reason='Data antiga informada pelo cliente no WhatsApp';
+  if v_n<>1 then raise exception 'Historico nao preservou data anterior, nova data, motivo e autor';end if;
+  v_blocked:=false;
+  begin
+    perform public.correct_used_battery_sale(
+       v_new,jsonb_build_object('sold_at_local',
+         to_char((now() at time zone 'America/Sao_Paulo')+interval '1 day',
+         'YYYY-MM-DD"T"HH24:MI')),
+       'Nao pode informar data de venda no futuro');
+  exception when others then v_blocked:=true;end;
+  if not v_blocked then raise exception 'Permitiu corrigir data para o futuro';end if;
+
+  raise notice 'PASSOU: venda antiga/normal, correcao de data, auditoria completa e relatorios corretos';
 end;
 $history$;
