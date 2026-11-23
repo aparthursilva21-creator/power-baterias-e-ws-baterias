@@ -90,6 +90,26 @@ begin
     where id=v_new and recorded_by=v_power and is_historical;
   if v_n<>1 then raise exception 'Importacao por Sandro não identificada'; end if;
 
+  -- Sandro corrige a data e modelo da própria importacao antiga.
+  perform public.correct_used_battery_sale(v_new,
+    jsonb_build_object('sold_at_local',to_char(v_date-interval '1 hour','YYYY-MM-DD"T"HH24:MI'),
+      'model','60 Ah corrigido'),
+    'Correção de data de uma venda histórica lançada por Sandro');
+  select count(*) into v_n from public.used_battery_sales
+  where id=v_new and (sold_at at time zone 'America/Sao_Paulo')=v_date-interval '1 hour';
+  if v_n<>1 then raise exception 'A data histórica não foi corrigida'; end if;
+  select count(*) into v_n from public.used_sale_revisions
+  where sale_id=v_new and action='corrected' and actor_id=v_power;
+  if v_n<>1 then raise exception 'Não auditou correção retroativa'; end if;
+
+  v_blocked:=false;
+  begin
+   perform public.correct_used_battery_sale(v_sale,
+    jsonb_build_object('model','Não deveria permitir'),
+    'Sandro não cadastrou esta venda da WS');
+  exception when others then v_blocked:=true;end;
+  if not v_blocked then raise exception 'Power editou lançamento de outro usuário';end if;
+
   v_blocked:=false;
   begin
     perform public.register_direct_battery_sale(
