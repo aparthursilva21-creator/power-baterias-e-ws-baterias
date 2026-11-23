@@ -8,8 +8,8 @@ declare
  v_id uuid:='daaaa000-0000-4000-8000-000000000001';
  v_before int;v_after int;v_count int;v_blocked boolean;
 begin
- select count(*) into v_before from public.used_battery_sales;
  perform set_config('request.jwt.claim.sub',v_ws::text,true);
+ select count(*) into v_before from public.used_battery_sales;
  insert into public.pbws_sale_drafts(owner_id,kind,form_data,request_id,expires_at)
  values(v_ws,'sale','{"customer":"Cliente WS","price":"150.00"}'::jsonb,v_id,now()+interval '365 days');
  select count(*) into v_count from public.pbws_sale_drafts where owner_id=v_ws
