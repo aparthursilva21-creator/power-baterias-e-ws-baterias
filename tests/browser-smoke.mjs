@@ -56,6 +56,14 @@ async function scenario(width,height){
           window.lastSaleArgs=params;
           return Promise.resolve({data:'sample-sale-id',error:null});
         }
+        if(name==='register_historical_battery_sale'){
+          window.lastHistoricalArgs=params;
+          return Promise.resolve({data:'sample-old-sale-id',error:null});
+        }
+        if(name==='register_ws_expense_historical'){
+          window.lastHistoricalExpense=params;
+          return Promise.resolve({data:'old-expense-id',error:null});
+        }
         if(name==='get_power_ws_team')return Promise.resolve({data:[{id:'00000000-0000-4000-8000-000000000099',role:'ws',email:'teste@example.test'}],error:null});
         if(name==='get_power_ws_monthly_report')return Promise.resolve({data:{month:'2026-11',role:'admin',sales_count:1,
            sales_revenue_cents:19000,power_repasse_sales_month_cents:6000,recovery_cost_sales_month_cents:1200,
@@ -106,6 +114,24 @@ async function scenario(width,height){
   assert.equal(recorded.p_sale_price_cents,20000);
   assert.equal(recorded.p_transfer_price_cents,6000);
   assert.ok(recorded.p_request_id,'chave de idempotência enviada');
+  await page.locator('[data-act="new-historical-sale"]').click();
+  assert.ok(await page.locator('#sale-form [name=sold_when]').isVisible(),'data e hora para venda antiga');
+  await page.locator('#sale-form [name=sold_when]').fill('2025-02-12T14:40');
+  await page.locator('#sale-form [name=brand]').fill('Heliar');
+  await page.locator('#sale-form [name=model]').fill('60 Ah');
+  await page.locator('#sale-form [name=price]').fill('260.00');
+  await page.locator('#sale-form [name=transfer]').fill('80.00');
+  await page.locator('#sale-form [name=recovery]').fill('5.00');
+  await page.locator('#sale-form [name=customer]').fill('Cliente do passado');
+  await page.locator('#sale-form [name=already_paid]').fill('30.00');
+  await page.locator('#sale-form [name=paid_when]').fill('2025-02-15T11:20');
+  await page.locator('.dialog-footer button[form="sale-form"]').click();
+  await page.waitForFunction(()=>!!window.lastHistoricalArgs);
+  const old=await page.evaluate(()=>window.lastHistoricalArgs);
+  assert.equal(old.p_sold_at_local,'2025-02-12T14:40');
+  assert.equal(old.p_prior_paid_cents,3000);
+  assert.equal(old.p_paid_at_local,'2025-02-15T11:20');
+
   await page.locator('[data-act="edit-sale"]').first().click();
   assert.ok(await page.locator('#edit-sale-form').isVisible(),'correcao de venda acessivel');
   await page.locator('#modal-close').click();
@@ -126,6 +152,17 @@ async function scenario(width,height){
   await page.locator('[data-act="new-expense"]').click();
   assert.ok(await page.locator('#expense-form').isVisible(),'formulário de despesa acessível');
   await page.locator('#modal-close').click();
+  await page.locator('[data-act="new-historical-expense"]').click();
+  assert.ok(await page.locator('#expense-form [name=spent]').isVisible(),'data de gasto antigo');
+  await page.locator('#expense-form [name=spent]').fill('2025-02-12');
+  await page.locator('#expense-form [name=spent_time]').fill('09:15');
+  await page.locator('#expense-form [name=amount]').fill('22.00');
+  await page.locator('#expense-form [name=description]').fill('Gasolina antiga');
+  await page.locator('.dialog-footer button[form="expense-form"]').click();
+  await page.waitForFunction(()=>!!window.lastHistoricalExpense);
+  const expense=await page.evaluate(()=>window.lastHistoricalExpense);
+  assert.equal(expense.p_spent_on,'2025-02-12');
+  assert.equal(expense.p_spent_at_local,'2025-02-12T09:15');
   await page.locator(side+' [data-view="reports"]').click();
   await page.locator('#monthly-report .stat-card').first().waitFor({timeout:10000});
   assert.ok(await page.locator('#monthly-report').isVisible(),'relatório mensal renderiza');
