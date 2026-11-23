@@ -63,6 +63,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f tests/integration.sql
       - name: Testar avisos, lembretes e privacidade
         run: psql -v ON_ERROR_STOP=1 -f tests/notification-integration.sql
+      - name: Instalar correcoes auditadas de vendas
+        run: psql -v ON_ERROR_STOP=1 -f supabase/010_sale_edit_cancel.sql
+      - name: Testar correcao e cancelamento de venda
+        run: psql -v ON_ERROR_STOP=1 -f tests/sale-revisions-integration.sql
 
   browser:
     name: Navegador real no celular e no PC
