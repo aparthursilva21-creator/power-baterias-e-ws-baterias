@@ -1,4 +1,4 @@
-import {receiptHTML,downloadReceipt,shareReceipt} from './ws-receipt.js?v=1';
+import {receiptHTML,downloadReceipt,shareReceipt,soldBatteryName} from './ws-receipt.js?v=2';
 import {SaleDraftStore,SALE_DRAFT_MINUTES} from './sale-drafts.js?v=1';
 
 /* Power Baterias × WS Baterias
@@ -408,6 +408,18 @@ async function openWSReceiptById(saleId){
  openWSReceipt(sale,bat);
 }
 
+function batteryDisplay(b){
+ return b?soldBatteryName(b):'Bateria não identificada';
+}
+function hideInternalBatteryCodes(message){
+ let result=String(message||'');
+ // Os códigos continuam no banco, mas a interface apresenta os nomes dos produtos.
+ for(const b of rows.batteries){
+  if(b?.code)result=result.replaceAll(b.code,batteryDisplay(b));
+ }
+ return result.replace(/\bWS-\d{4,}\b/g,'bateria');
+}
+
 function salesView(){
  const content=rows.sales.map(s=>{
  const b=battery(s.battery_id),st=settleFor(s.battery_id),sts=settlingStatus(st);
@@ -423,7 +435,7 @@ function salesView(){
  return '<tr><td><strong>'+stamp(s.sold_at)+'</strong>'+
  (s.is_historical?'<div style="margin-top:4px">'+statusBadge('Venda antiga','gray')+'</div>':'')+
  (dateRevision?'<div style="margin-top:4px">'+statusBadge('Data/hora corrigida','yellow')+'</div>':'')+
- '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+allActions+'</td></tr>';
+ '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td><td>'+esc(batteryDisplay(b))+'<div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Bateria vendida')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+allActions+'</td></tr>';
  }).join('');
  return heading('Vendas','Cada venda aparece no mês em que aconteceu, mesmo quando cadastrada depois.',
  '<div class="btn-row">'+
@@ -437,11 +449,11 @@ function settlementView() {
  const total=pending.reduce((a,x)=>a+remaining(x),0);
  const rowsHtml=rows.settlements.map(s=>{
   const b=battery(s.battery_id),sale=saleFor(s.battery_id),sts=settlingStatus(s);
-  const pick=canPay()&&remaining(s)>0?'<input type="checkbox" data-select-settle="'+s.id+'" aria-label="Selecionar acerto '+esc(b?.code||'')+'" '+(selectedSettle.has(s.id)?'checked':'')+'>':'';
+  const pick=canPay()&&remaining(s)>0?'<input type="checkbox" data-select-settle="'+s.id+'" aria-label="Selecionar acerto '+esc(batteryDisplay(b))+'" '+(selectedSettle.has(s.id)?'checked':'')+'>':'';
   const actions=canPay()?'<button class="btn tiny secondary" type="button" data-act="single-settlement" data-id="'+s.id+'">Gerenciar</button>':'—';
-  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(b?.code||shortId(s.id))+'</div><div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(s.paid_cents)+'</td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
+  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(batteryDisplay(b))+'</div><div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Venda registrada')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(s.paid_cents)+'</td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
  }).join('');
- const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto '+shortId(x.id)+'</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(x.total_paid_cents)+'</strong><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
+ const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto em lote</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(x.total_paid_cents)+'</strong><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
  return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?'<div class="btn-row">'+button('✓ Acertar selecionadas','batch-settle')+(pending.length?button('🔔 Cobrar WS','remind-ws','secondary'):'')+'</div>':'')+
  '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+Number(s.paid_cents),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
  panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Já pago','Falta','Situação',''],rowsHtml))+
@@ -487,7 +499,7 @@ function reportView() {
  '<div class="panel"><div class="panel-body filter-row">'+field('Mês de referência','month','month',reportMonth,'id="report-month"')+
  '<button class="btn" type="button" data-act="fetch-report">Consultar mês</button><button class="btn secondary" type="button" data-act="export-csv">Exportar vendas CSV</button></div></div>'+
  '<div id="monthly-report">'+(report?reportSummary(report):'<div class="loading"><span class="loader"></span> Selecione o mês para visualizar os indicadores.</div>')+'</div>'+
- panel('Todas as vendas do mês',tbl(['Data / Hora','Bateria','Cliente','Valor de venda','Repasse','Situação'],rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth).map(s=>{const st=settleFor(s.battery_id);const b=battery(s.battery_id);const x=settlingStatus(st);return '<tr><td>'+stamp(s.sold_at)+'</td><td>'+esc(b?.code||shortId(s.battery_id))+'</td><td>'+esc(s.customer_name)+'</td><td>'+brl(s.sale_price_cents)+'</td><td>'+brl(st?.owed_cents||0)+'</td><td>'+statusBadge(x[0],x[1])+'</td></tr>';}).join('')));
+ panel('Todas as vendas do mês',tbl(['Data / Hora','Bateria','Cliente','Valor de venda','Repasse','Situação'],rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth).map(s=>{const st=settleFor(s.battery_id);const b=battery(s.battery_id);const x=settlingStatus(st);return '<tr><td>'+stamp(s.sold_at)+'</td><td>'+esc(batteryDisplay(b))+'</td><td>'+esc(s.customer_name)+'</td><td>'+brl(s.sale_price_cents)+'</td><td>'+brl(st?.owed_cents||0)+'</td><td>'+statusBadge(x[0],x[1])+'</td></tr>';}).join('')));
 }
 function stampMonth(input){return monthKey(input);}
 function reportSummary(r){
@@ -517,7 +529,7 @@ function warrantyView(){
   const expiry=new Date(new Date(s.sold_at).getTime()+Number(s.warranty_days)*86400000);
   const active=expiry.getTime()>=now;
   const b=battery(s.battery_id);
-  return '<tr><td>'+esc(b?.code||shortId(s.battery_id))+'</td><td>'+esc(s.customer_name)+'</td><td>'+stamp(s.sold_at)+'</td><td>'+stamp(expiry.toISOString())+'</td><td>'+statusBadge(active?'Ativa':'Vencida',active?'green':'red')+'</td></tr>';
+  return '<tr><td>'+esc(batteryDisplay(b))+'</td><td>'+esc(s.customer_name)+'</td><td>'+stamp(s.sold_at)+'</td><td>'+stamp(expiry.toISOString())+'</td><td>'+statusBadge(active?'Ativa':'Vencida',active?'green':'red')+'</td></tr>';
  }).join('');
  return heading('Garantias','A garantia é vinculada à venda e permanece no histórico.')+
  panel('Garantias registradas',tbl(['Bateria','Cliente','Início','Vencimento','Status'],list));
@@ -533,14 +545,14 @@ function activityView(){
       at:x.occurred_at,who:x.actor_id,category:'Venda',
       description:x.action==='cancelled'?'Venda cancelada':
         dateChanged?'Data e horário corrigidos':'Venda corrigida',
-      detail:(b?.code?b.code+' · ':'')+
+      detail:(b?batteryDisplay(b)+' · ':'')+
         (dateChanged?'ANTES: '+stamp(oldDate)+' → DEPOIS: '+stamp(newDate)+' · ':'')+
         'Motivo: '+x.reason+
         (x.action==='cancelled'?' · Registro preservado para auditoria':'')
     };
   }),
-  ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:x.reason+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
-  ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:x.description||''})),
+  ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:hideInternalBatteryCodes(x.reason)+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
+  ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:hideInternalBatteryCodes(x.description)||''})),
   ...rows.powerExpenseEvents.map(x=>({
     at:x.occurred_at,who:x.actor_id,category:'Despesa Power',
     description:x.action==='created'?'Cadastrada':'Corrigida',
@@ -719,7 +731,7 @@ function openEditSale(s){
   return toast('Você não tem permissão para corrigir essa venda.','error');
  const b=battery(s.battery_id);
  if(!b)return toast('Dados da bateria não encontrados.','error');
- const body='<div class="note">Corrigir a venda '+esc(b.code)+'. <b>A data e hora em que a venda aconteceu podem ser alteradas.</b> O horário do cadastro e o responsável originais continuam preservados. Toda correção exige motivo e fica no histórico. O repasse ao Sandro é ajustado na aba Acertos.</div>'+
+ const body='<div class="note">Corrigir a venda da bateria '+esc(batteryDisplay(b))+'. <b>A data e hora em que a venda aconteceu podem ser alteradas.</b> O horário do cadastro e o responsável originais continuam preservados. Toda correção exige motivo e fica no histórico. O repasse ao Sandro é ajustado na aba Acertos.</div>'+
  '<form id="edit-sale-form" class="field-grid" style="margin-top:16px">'+
  field('Data e hora da venda (Brasília)','sold_when','datetime-local',
    brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide"')+
@@ -791,7 +803,7 @@ function openSettlement(s) {
  ['correct_paid','Corrigir pagamento registrado'],
  ['reopen','Reabrir valor dispensado']
  ];
- const body='<div class="note">Bateria <b>'+esc(b?.code||shortId(s.battery_id))+'</b> · Status: <b>'+sts[0]+'</b> · Total: <b>'+brl(s.owed_cents)+'</b> · Pago: <b>'+brl(s.paid_cents)+'</b> · Pendente: <b>'+brl(remaining(s))+'</b></div>'+
+ const body='<div class="note">Bateria <b>'+esc(batteryDisplay(b))+'</b> · Status: <b>'+sts[0]+'</b> · Total: <b>'+brl(s.owed_cents)+'</b> · Pago: <b>'+brl(s.paid_cents)+'</b> · Pendente: <b>'+brl(remaining(s))+'</b></div>'+
  '<form id="settlement-form" class="field-grid" style="margin-top:16px">'+
  selectField('Operação','action',opts,remaining(s)?'payment':'adjust_owed','id="settlement-action"')+
  field('Valor da operação (R$)','amount','number',fromCents(remaining(s)),'step="0.01" min="0"')+
@@ -965,10 +977,10 @@ function exportSales(){
  const rs=rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth);
  if(!rs.length)return toast('Não há vendas para exportar neste mês.','error');
  const csvSafe=x=>{const s=String(x??'');return '"'+( /^[=+\-@\t\r]/.test(s)?"'"+s:s).replace(/"/g,'""')+'"';};
- const matrix=[['Venda em','Cadastro no sistema','Bateria','Marca','Cliente','Telefone','Placa','Valor venda (R$)','Repasse Power (R$)','Valor pago (R$)','Saldo (R$)','Status','Vendedor','Garantia (dias)']];
+ const matrix=[['Venda em','Cadastro no sistema','Bateria vendida','Marca','Cliente','Telefone','Placa','Valor venda (R$)','Repasse Power (R$)','Valor pago (R$)','Saldo (R$)','Status','Vendedor','Garantia (dias)']];
  for(const s of rs){
   const b=battery(s.battery_id), st=settleFor(s.battery_id),ss=settlingStatus(st);
-  matrix.push([stamp(s.sold_at),stamp(s.recorded_at||s.sold_at),b?.code||'',b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),ss[0],staffName(s.sold_by),s.warranty_days]);
+  matrix.push([stamp(s.sold_at),stamp(s.recorded_at||s.sold_at),batteryDisplay(b),b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),ss[0],staffName(s.sold_by),s.warranty_days]);
  }
  const content='\uFEFF'+matrix.map(r=>r.map(csvSafe).join(';')).join('\r\n');
  const blob=new Blob([content],{type:'text/csv;charset=utf-8;'});
