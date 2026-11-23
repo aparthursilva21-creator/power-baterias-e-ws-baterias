@@ -52,7 +52,7 @@ export function receiptHTML(sale,battery){
   '<div class="ws-receipt-pad">',
   '<div class="ws-receipt-meta">',
   field('Venda realizada em',d.soldAt),
-  field('Documento', 'Comprovante de venda'),
+  field('Empresa vendedora','WS Baterias'),
   '</div>',
   '<div class="ws-receipt-section ws-customer"><h4>CLIENTE</h4>',
   '<div class="ws-receipt-fields">',field('Nome',d.customer),
