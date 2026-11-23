@@ -8,12 +8,15 @@ declare
   n integer; v_sale uuid; v_reminder jsonb; v_pending uuid;
   blocked boolean;
 begin
+  perform set_config('request.jwt.claim.sub',v_power::text,true);
   select count(*) into n from public.pbws_notifications
   where recipient_id=v_power and kind='sale';
   if n<>2 then raise exception 'Sandro deveria receber aviso por cada venda'; end if;
+  perform set_config('request.jwt.claim.sub',v_ws::text,true);
   select count(*) into n from public.pbws_notifications
   where recipient_id=v_ws and kind='settlement';
   if n<>1 then raise exception 'WS deve receber um unico aviso do lote'; end if;
+  perform set_config('request.jwt.claim.sub',v_admin::text,true);
   select count(*) into n from public.pbws_notifications
   where recipient_id=v_admin and kind in ('sale','settlement');
   if n<>3 then raise exception 'Administrador perdeu alertas'; end if;
@@ -56,6 +59,7 @@ begin
   select count(*) into n from public.pbws_notifications
    where recipient_id=v_ws and read_at is null;
   if n<>0 then raise exception 'WS nao marcou suas mensagens como lidas'; end if;
+  perform set_config('request.jwt.claim.sub',v_power::text,true);
   select count(*) into n from public.pbws_notifications
    where recipient_id=v_power and read_at is null;
   if n<1 then raise exception 'WS marcou mensagem do Sandro por engano'; end if;
