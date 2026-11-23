@@ -85,6 +85,8 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f tests/power-expenses-integration.sql
       - name: Instalar rascunhos privados de vendas
         run: psql -v ON_ERROR_STOP=1 -f supabase/016_sale_drafts.sql
+      - name: Configurar remoção de rascunhos vencidos
+        run: psql -v ON_ERROR_STOP=1 -f supabase/017_draft_expiry_cleanup.sql
       - name: Testar privacidade e prazo dos rascunhos
         run: psql -v ON_ERROR_STOP=1 -f tests/sale-drafts-integration.sql
 
