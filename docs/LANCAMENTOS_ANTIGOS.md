@@ -26,7 +26,7 @@ O sistema coloca a venda no mês de ocorrência e o pagamento no mês em que foi
 
 ## 2. Registrar gasto antigo da WS
 
-Abra **Despesas → Gasto antigo**.
+Abra **Despesas → Gasto antigo**. Arthur deve selecionar primeiro **WS Baterias** ou **Power Baterias**.
 
 1. Escolha a categoria (gasolina, entrega, materiais etc.).
 2. Informe a data real do gasto.
@@ -34,7 +34,7 @@ Abra **Despesas → Gasto antigo**.
 4. Digite o valor e uma descrição.
 5. Salve. A despesa entrará no mês do gasto, e a data/hora do cadastro continuará no histórico.
 
-**Acesso:** como o módulo de despesas atual é da **WS Baterias**, somente Wanderson e Arthur podem cadastrar e consultar essas despesas. **Despesas próprias da Power Baterias exigem um módulo separado**, para não misturar os resultados das empresas.
+**Acesso:** agora a aba **Despesas** é separada por empresa. **Wanderson vê e lança os gastos da WS**; **Sandro vê e lança os gastos da Power**; **Arthur pode consultar e selecionar as duas empresas**. Os valores não são misturados entre elas. As despesas da Power aparecem separadamente nos relatórios de Sandro e Arthur.
 
 ## 3. Os acertos e os relatórios
 
