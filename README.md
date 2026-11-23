@@ -40,4 +40,4 @@ A cada venda registrada, Sandro recebe um aviso; ao confirmar um acerto, Wanders
 
 ## Lançamentos retroativos
 
-Em **Vendas → Lançar venda antiga**, use a data/hora real do negócio e informe também se o repasse à Power já foi pago e quando. Em **Despesas → Gasto antigo**, informe a data real, o horário quando conhecido e o valor. As datas de cadastro e os responsáveis permanecem separados no banco para auditoria. O módulo de despesas é exclusivo da WS Baterias; gastos próprios da Power devem ter controles separados.
+Em **Vendas → Lançar venda antiga**, use a data/hora real do negócio e informe também se o repasse à Power já foi pago e quando. Em **Despesas → Gasto antigo**, informe a data real, o horário quando conhecido e o valor. As datas de cadastro e os responsáveis permanecem separados no banco para auditoria. A aba **Despesas** usa caixas separados: Sandro vê gastos Power, Wanderson vê gastos WS e Arthur pode alternar entre as duas empresas. Relatórios também apresentam as despesas Power isoladas do lucro WS.
