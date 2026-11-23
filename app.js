@@ -1,4 +1,5 @@
 import {receiptHTML,downloadReceipt,shareReceipt} from './ws-receipt.js?v=1';
+import {SaleDraftStore,SALE_DRAFT_MINUTES} from './sale-drafts.js?v=1';
 
 /* Power Baterias × WS Baterias
    Operação remota: Supabase Auth + RLS + funções SQL transacionais.
@@ -26,6 +27,10 @@ let refreshing = false, submitting = false, ready = false, timer = null, report 
 let selectedSettle = new Set();
 let expenseBranch='ws';
 let activeReceipt=null;
+let draftStore=null;
+let draftCache={sale:null,historical_sale:null};
+let activeSaleDraft=null;
+let draftSaveTimer=null;
 let liveChannel=null;let liveRefreshDebounce=null;
 function zonedDateParts(value){
   return Object.fromEntries(new Intl.DateTimeFormat('en-US',{
@@ -118,7 +123,10 @@ function modal(title, content, footer='') {
   document.body.style.overflow='hidden';
   $('#modal-close').focus();
 }
-function closeModal() { $('#modal-root').hidden=true;document.body.style.overflow=''; }
+function closeModal() {
+  if(!submitting && activeSaleDraft?.form?.isConnected) void persistSaleDraft();
+  $('#modal-root').hidden=true;document.body.style.overflow='';
+}
 $('#modal-close').addEventListener('click',closeModal);
 $('#modal-root').addEventListener('click', e => {
   if (e.target === $('#modal-root') || e.target.closest('[data-modal-close]')) closeModal();
@@ -145,6 +153,87 @@ async function runRpc(name, params, successMessage, afterSave=null) {
   } catch(err) { toast(explain(err),'error'); return false; }
   finally { setBusy(false); }
 }
+// Campos não confirmados são salvos como rascunho individual no Supabase.
+// Sem localStorage: a empresa não deixa dados de clientes permanentemente no aparelho.
+function draftMode(historical){return historical?'historical_sale':'sale';}
+function draftStatus(message){
+ const form=$('#sale-form'),el=$('[data-sale-draft-status]');
+ if(form && activeSaleDraft?.form===form && el)el.textContent=message;
+}
+function draftSnapshot(form,ctx){
+ return {kind:ctx.kind,form_data:Object.fromEntries(new FormData(form)),
+  request_id:ctx.requestId};
+}
+function queueDraftSave(){
+ const ctx=activeSaleDraft;
+ if(!ctx || !ctx.form?.isConnected || !draftStore ||
+    !user || ctx.userId!==user.id || submitting)return;
+ const copy=draftSnapshot(ctx.form,ctx);
+ draftCache[ctx.kind]=copy;
+ ctx.dirty=true;
+ draftStatus('Salvando rascunho…');
+ clearTimeout(draftSaveTimer);
+ draftSaveTimer=setTimeout(()=>{void persistSaleDraft();},280);
+}
+async function persistSaleDraft(){
+ clearTimeout(draftSaveTimer);
+ const ctx=activeSaleDraft;
+ if(!ctx || ctx.discarded || !ctx.dirty ||
+    !draftStore || !user || ctx.userId!==user.id)return;
+ const snapshot=ctx.form?.isConnected?draftSnapshot(ctx.form,ctx):draftCache[ctx.kind];
+ if(!snapshot)return;
+ draftCache[ctx.kind]=snapshot;
+ ctx.dirty=false;
+ draftStatus('Salvando rascunho…');
+ try{
+  await draftStore.save(ctx.kind,snapshot.form_data,ctx.requestId);
+  if(activeSaleDraft===ctx&&!ctx.dirty)
+    draftStatus('✓ Rascunho salvo por até '+SALE_DRAFT_MINUTES+' minutos.');
+ }catch(err){
+  if(activeSaleDraft===ctx){
+   ctx.dirty=true;
+   draftStatus('Sem conexão para salvar. Os dados permanecem nesta tela.');
+  }
+  console.warn('Rascunho remoto não foi salvo.',err);
+ }
+}
+async function forgetSaleDraft(kind){
+ clearTimeout(draftSaveTimer);
+ if(activeSaleDraft?.kind===kind){
+  activeSaleDraft.discarded=true;
+  activeSaleDraft=null;
+ }
+ draftCache[kind]=null;
+ if(!draftStore)return;
+ try {await draftStore.remove(kind);}
+ catch(err){console.warn('Não foi possível excluir o rascunho no servidor.',err);}
+}
+async function discardSaleDraft(){
+ if(!activeSaleDraft)return;
+ if(!confirm('Descartar o rascunho desta venda? Os dados ainda não foram confirmados e serão excluídos.'))return;
+ const kind=activeSaleDraft.kind;
+ await forgetSaleDraft(kind);
+ closeModal();
+ toast('Rascunho descartado.');
+}
+async function resumeSaleDraft(){
+ if(!draftStore || !api || !user || !ready)return;
+ try{
+  const item=await draftStore.latest();
+  if(!item || !api || !user)return;
+  if(rows.sales.some(s=>s.client_request_id===item.request_id)){
+    void draftStore.remove(item.kind);
+    return;
+  }
+  const historical=item.kind==='historical_sale';
+  if(historical?!canBackdateSale():!canSell())return;
+  // Só reabre o formulário após login, nunca durante atualização em tempo real.
+  current='sales';render();
+  openSale(historical,item);
+  toast('Rascunho da venda recuperado. Você pode continuar de onde parou.');
+ }catch(err){console.warn('Não foi possível recuperar rascunho remoto.',err);}
+}
+
 function nav() {
   const visible = MENU.filter(x => x[0] !== 'expenses' || canExpense());
   const html=visible.map(x=>'<button class="nav-action'+(x[0]===current?' active':'')+'" data-view="'+x[0]+'" type="button" '+(x[0]===current?'aria-current="page"':'')+'><span class="nav-symbol" aria-hidden="true">'+x[1]+'</span><span>'+x[2]+'</span></button>').join('');
@@ -157,12 +246,20 @@ function setupError(msg) {
   panel('Ativar o banco no projeto novo','<div class="panel-body"><p class="muted">No Supabase SQL Editor, execute na ordem as migrações 002, 003, 004 e 005 deste repositório. Depois clique em Atualizar.</p><p><a href="https://github.com/aparthursilva21-creator/power-baterias-e-ws-baterias/tree/main/supabase" target="_blank" rel="noopener">Abrir arquivos SQL no GitHub</a></p>'+button('↻ Testar conexão novamente','refresh','')+'</div>')+'</div>';
 }
 async function boot(session) {
+  const changedAccount=user?.id!==session.user.id;
   api=session.client;user=session.user;role=session.role;
+  if(changedAccount){
+    clearTimeout(draftSaveTimer);
+    draftCache={sale:null,historical_sale:null};
+    activeSaleDraft=null;
+    draftStore=new SaleDraftStore(api,user.id);
+  }
   expenseBranch=role==='power'?'power':'ws';
   $('#role-label').textContent=roleName(role);
   $('#account-details').textContent=user.email || 'Conta autorizada';
   nav();
   await loadAll();
+  if(changedAccount)await resumeSaleDraft();
   if(liveChannel) { await api.removeChannel(liveChannel); liveChannel=null; }
   // Eventos imediatos, com consulta periódica de segurança caso o WebSocket caia.
   liveChannel=api.channel('pbws-sync-' + user.id.slice(0,8))
@@ -179,6 +276,16 @@ function syncSoon(){
   clearTimeout(liveRefreshDebounce);
   liveRefreshDebounce=setTimeout(()=>{if(api && ready && !refreshing && !submitting)void loadAll(true);},600);
 }
+document.addEventListener('visibilitychange',()=>{
+ if(document.hidden && activeSaleDraft?.form?.isConnected){
+   // Saindo para o WhatsApp: inicia gravação imediata antes do navegador suspender o app.
+   void persistSaleDraft();
+ }
+});
+window.addEventListener('pagehide',()=>{
+ if(activeSaleDraft?.form?.isConnected)void persistSaleDraft();
+});
+
 window.addEventListener('pbws:ready',e=>void boot(e.detail));
 window.addEventListener('pbws:go-section',e=>{
  const view=e.detail?.view;
@@ -190,6 +297,8 @@ window.addEventListener('pbws:go-section',e=>{
 
 window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
+  clearTimeout(draftSaveTimer);
+  activeSaleDraft=null;draftStore=null;draftCache={sale:null,historical_sale:null};
   api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
@@ -475,6 +584,7 @@ document.addEventListener('click',async e=>{
  try {
   if(act==='refresh')await loadAll(true);
   if(act==='new-sale')openSale();
+  if(act==='discard-sale-draft')await discardSaleDraft();
   if(act==='ws-receipt')await openWSReceiptById(btn.dataset.id);
   if(act==='new-historical-sale')openSale(true);
   if(act==='edit-sale')openEditSale(rows.sales.find(s=>s.id===btn.dataset.id));
@@ -498,10 +608,13 @@ document.addEventListener('change',e=>{
   reportMonth=e.target.value;report=null;render();void fetchReport();
  }
 });
-function openSale(historical=false){
+function openSale(historical=false,restored=null){
  if(historical?!canBackdateSale():!canSell())
   return toast('Seu perfil não pode registrar este tipo de venda.','error');
- const requestId=crypto.randomUUID();
+ const kind=draftMode(historical);
+ if(activeSaleDraft?.dirty)void persistSaleDraft();
+ const draft=restored||draftCache[kind];
+ const requestId=draft?.request_id||crypto.randomUUID();
  const body='<form id="sale-form" class="field-grid">'+
  (historical?'<div class="note wide"><b>Venda antiga</b><br>Use a data e a hora reais da venda, no horário de Brasília. O sistema registra separadamente quando você digitou as informações.</div>'+
  field('Data e hora da venda (Brasília)','sold_when','datetime-local','','required max="'+brazilLocalNow()+'" class="wide"'):'')+
@@ -523,11 +636,26 @@ function openSale(historical=false){
  field('Valor já pago ao Sandro (R$)','already_paid','number','0.00','min="0" step="0.01" required')+
  field('Data e hora do pagamento antigo (Brasília)','paid_when','datetime-local','','max="'+brazilLocalNow()+'"'):'')+
  '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
+ '<div class="sale-draft-bar"><span data-sale-draft-status>Rascunho protegido: os campos são salvos na sua conta por até '+SALE_DRAFT_MINUTES+' minutos.</span>'+
+ '<button class="btn tiny secondary" type="button" data-act="discard-sale-draft">Descartar rascunho</button></div>'+
  (historical?'<div class="note" style="margin-top:15px">A venda entra no relatório do mês em que ocorreu; pagamentos informados entram no mês em que foram realizados. O histórico registra o lançamento feito agora.</div>':
  '<div class="note" style="margin-top:15px">A venda, o cliente, o horário e o acerto pendente serão registrados juntos no banco.</div>');
  modal(historical?'Lançar venda antiga':'Registrar venda',body,
  '<button class="btn secondary" data-modal-close type="button">Voltar</button>'+
  '<button type="submit" class="btn" form="sale-form">✓ Salvar venda</button>');
+ const saleForm=$('#sale-form');
+ if(draft?.form_data && typeof draft.form_data==='object'){
+  for(const [name,value] of Object.entries(draft.form_data)){
+   const control=saleForm.elements.namedItem(name);
+   if(control && (control instanceof HTMLInputElement ||
+       control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) &&
+       typeof value==='string')control.value=value;
+  }
+ }
+ activeSaleDraft={kind,requestId,userId:user.id,form:saleForm,dirty:false,discarded:false};
+ if(draft?.form_data)draftStatus('✓ Rascunho recuperado. Continue preenchendo normalmente.');
+ saleForm.addEventListener('input',queueDraftSave);
+ saleForm.addEventListener('change',queueDraftSave);
  $('#sale-form').addEventListener('submit',e=>{
   e.preventDefault();
   try{
@@ -554,7 +682,10 @@ function openSale(historical=false){
    void runRpc(historical?'register_historical_battery_sale':'register_direct_battery_sale',args,
     historical?'Venda antiga salva no mês correto, com o acerto correspondente.':
      'Venda registrada! O acerto aparece para Sandro.',
-    async saleId=>{await openWSReceiptById(saleId);});
+    async saleId=>{
+      await forgetSaleDraft(kind);
+      await openWSReceiptById(saleId);
+    });
   }catch(err){toast(explain(err),'error');}
  });
 }
