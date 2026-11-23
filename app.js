@@ -1,3 +1,5 @@
+import {receiptHTML,downloadReceipt,shareReceipt} from './ws-receipt.js?v=1';
+
 /* Power Baterias × WS Baterias
    Operação remota: Supabase Auth + RLS + funções SQL transacionais.
    Sem armazenamento local para vendas ou dinheiro.
@@ -23,6 +25,7 @@ let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems:
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let expenseBranch='ws';
+let activeReceipt=null;
 let liveChannel=null;let liveRefreshDebounce=null;
 function zonedDateParts(value){
   return Object.fromEntries(new Intl.DateTimeFormat('en-US',{
@@ -125,15 +128,19 @@ function setBusy(value) {
   submitting=value;
   $$('.dialog button, .dialog input, .dialog select, .dialog textarea').forEach(el=>el.disabled=value);
 }
-async function runRpc(name, params, successMessage) {
+async function runRpc(name, params, successMessage, afterSave=null) {
   if(submitting) return false;
   setBusy(true);
   try {
-    const { error } = await api.rpc(name,params);
+    const {data,error} = await api.rpc(name,params);
     if(error) throw error;
     closeModal();
     toast(successMessage);
     await loadAll(true);
+    if(afterSave){
+      try{await afterSave(data);}
+      catch(err){toast('Venda salva, mas não foi possível abrir a notinha. Abra Vendas para gerar novamente.','error');}
+    }
     return true;
   } catch(err) { toast(explain(err),'error'); return false; }
   finally { setBusy(false); }
@@ -261,15 +268,49 @@ function dashboardView() {
   panel('A receber · Power','<div class="panel-body lined-list">'+pendingHtml+'</div>',button('Abrir acertos','settlements','secondary tiny'))+'</div>'+
   '<div class="note">Os valores financeiros e horários são consultados no banco Supabase. Horários exibidos em Brasília (UTC−3). '+(canPay()?'Você pode conciliar pagamentos.':'O Sandro controla e confirma os repasses.')+'</div>';
 }
+function canMakeWSReceipt(s){
+ return !!s && !s.cancelled_at && ['ws','power','admin'].includes(role);
+}
+function openWSReceipt(s,b){
+ if(!canMakeWSReceipt(s) || !b)throw new Error('Não foi possível localizar os dados da venda.');
+ activeReceipt={sale:s,battery:b};
+ modal('Comprovante de venda · WS Baterias',receiptHTML(s,b),
+  '<button class="btn secondary" type="button" data-modal-close>Fechar</button>'+
+  '<button class="btn secondary" type="button" data-receipt-action="print">Imprimir</button>'+
+  '<button class="btn" type="button" data-receipt-action="download">Baixar PDF</button>'+
+  '<button class="btn" type="button" data-receipt-action="share">Compartilhar</button>');
+}
+async function openWSReceiptById(saleId){
+ if(!saleId || !api)throw new Error('Informe a venda.');
+ let sale=rows.sales.find(x=>x.id===saleId);
+ let bat=sale?battery(sale.battery_id):null;
+ if(!sale){
+  const res=await api.from('used_battery_sales').select('*').eq('id',saleId).single();
+  if(res.error)throw res.error;
+  sale=res.data;
+ }
+ if(!sale || sale.cancelled_at)throw new Error('Esta venda não está mais ativa.');
+ if(!bat){
+  const res=await api.from('used_batteries').select('*').eq('id',sale.battery_id).single();
+  if(res.error)throw res.error;
+  bat=res.data;
+ }
+ if(!bat)throw new Error('Bateria vinculada à venda não encontrada.');
+ openWSReceipt(sale,bat);
+}
+
 function salesView(){
  const content=rows.sales.map(s=>{
  const b=battery(s.battery_id),st=settleFor(s.battery_id),sts=settlingStatus(st);
+ const receiptButton=canMakeWSReceipt(s)?
+    '<button type="button" class="btn tiny ws-receipt-button" data-act="ws-receipt" data-id="'+s.id+'">▤ Notinha WS</button>':'';
  const actions=canEditSale(s)?
     '<div class="row-actions"><button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>'+
     (role==='admin'?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Cancelar</button>':'')+'</div>':'—';
+ const allActions='<div class="row-actions">'+receiptButton+(actions==='—'?'':actions)+'</div>';
  return '<tr><td><strong>'+stamp(s.sold_at)+'</strong>'+
  (s.is_historical?'<div style="margin-top:4px">'+statusBadge('Venda antiga','gray')+'</div>':'')+
- '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
+ '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td><td>+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+allActions+'</td></tr>';
  }).join('');
  return heading('Vendas','Cada venda aparece no mês em que aconteceu, mesmo quando cadastrada depois.',
  '<div class="btn-row">'+
@@ -389,6 +430,26 @@ function activityView(){
  panel('Auditoria da parceria',tbl(['Data / Hora','Área','Ação','Detalhes','Responsável'],content));
 }
 document.addEventListener('click',async e=>{
+ const receiptAction=e.target.closest('[data-receipt-action]');
+ if(receiptAction){
+  const action=receiptAction.dataset.receiptAction;
+  if(!activeReceipt || !api || !['ws','power','admin'].includes(role))return;
+  if(action==='print'){window.print();return;}
+  receiptAction.disabled=true;
+  try{
+   if(action==='download'){
+     await downloadReceipt(activeReceipt.sale,activeReceipt.battery);
+     toast('Notinha da WS Baterias salva em PDF.');
+   }else if(action==='share'){
+     const result=await shareReceipt(activeReceipt.sale,activeReceipt.battery);
+     toast(result==='shared'?'Comprovante encaminhado para compartilhamento.':
+       'PDF salvo. Anexe o arquivo à conversa do cliente.');
+   }
+  }catch(err){
+   if(err?.name!=='AbortError')toast('Erro ao gerar comprovante: '+explain(err),'error');
+  }finally{receiptAction.disabled=false;}
+  return;
+ }
  const branch=e.target.closest('[data-expense-branch]');
  if(branch && canExpense()){
    const next=branch.dataset.expenseBranch;
@@ -414,6 +475,7 @@ document.addEventListener('click',async e=>{
  try {
   if(act==='refresh')await loadAll(true);
   if(act==='new-sale')openSale();
+  if(act==='ws-receipt')await openWSReceiptById(btn.dataset.id);
   if(act==='new-historical-sale')openSale(true);
   if(act==='edit-sale')openEditSale(rows.sales.find(s=>s.id===btn.dataset.id));
   if(act==='cancel-sale')openCancelSale(rows.sales.find(s=>s.id===btn.dataset.id));
@@ -491,7 +553,8 @@ function openSale(historical=false){
    }
    void runRpc(historical?'register_historical_battery_sale':'register_direct_battery_sale',args,
     historical?'Venda antiga salva no mês correto, com o acerto correspondente.':
-     'Venda registrada! O acerto aparece para Sandro.');
+     'Venda registrada! O acerto aparece para Sandro.',
+    async saleId=>{await openWSReceiptById(saleId);});
   }catch(err){toast(explain(err),'error');}
  });
 }
