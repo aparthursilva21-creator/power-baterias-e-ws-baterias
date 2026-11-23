@@ -1,0 +1,96 @@
+/* Comprovante não fiscal WS Baterias — identidade azul independente do app verde */
+#modal-root:has(.ws-receipt) .dialog{
+ width:min(770px,100%);max-height:min(94dvh,1080px);border-color:#265fa7;
+ background:#101f33;box-shadow:0 30px 100px #000e
+}
+#modal-root:has(.ws-receipt) .dialog-header{border-bottom:1px solid #274a74}
+#modal-root:has(.ws-receipt) .dialog-content{background:#14243b;padding:16px;overflow:auto}
+#modal-root:has(.ws-receipt) .dialog-footer{background:#101f33;border-top:1px solid #274a74}
+#modal-root:has(.ws-receipt) .dialog-footer .btn{white-space:normal;min-height:43px}
+.ws-receipt{background:#fff;color:#162e4c;border-radius:14px;max-width:650px;margin:0 auto;overflow:hidden;box-shadow:0 12px 40px #050c1673;font-family:'DM Sans',Arial,sans-serif;letter-spacing:0}
+.ws-receipt *{box-sizing:border-box}
+.ws-receipt-hero{background:linear-gradient(123deg,#071f40,#0d3670 73%,#1250ab);color:#fff;padding:27px 29px 18px;position:relative;overflow:hidden}
+.ws-receipt-hero:before{content:'';width:250px;height:250px;border:1px solid #82bdff2c;border-radius:50%;position:absolute;right:-80px;top:-130px;pointer-events:none}
+.ws-receipt-identity{display:flex;align-items:center;gap:15px;position:relative}
+.ws-logo-icon{display:grid;place-items:center;position:relative;flex:0 0 65px;height:65px;border-radius:17px;background:linear-gradient(135deg,#409aff,#1466df);box-shadow:0 8px 25px #0209136b;transform:rotate(-3deg)}
+.ws-logo-icon b{font-family:'Space Grotesk',Arial,sans-serif;font-size:26px;letter-spacing:-2px;color:white}
+.ws-logo-icon span{position:absolute;font-size:13px;bottom:7px;color:#badbff;right:7px}
+.ws-identity-overline{font-size:9px;letter-spacing:.17em;font-weight:800;color:#9ecaff}
+.ws-identity-title{font-family:'Space Grotesk',Arial,sans-serif;font-size:30px;letter-spacing:-1.5px;font-weight:900;line-height:1.08}
+.ws-identity-title span{color:#9fc9ff}
+.ws-identity-sub{font-size:11px;color:#d0e4ff;margin-top:5px}
+.ws-receipt-hero-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:26px;padding-top:13px;border-top:1px solid #b9d8ff35;font-size:11px;font-weight:850;letter-spacing:.1em}
+.ws-receipt-hero-foot strong{font-size:9px;letter-spacing:.07em;color:#add6ff;border:1px solid #74afff61;padding:6px 9px;border-radius:6px}
+.ws-receipt-pad{padding:23px 29px 26px}
+.ws-receipt-meta{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:2px 0 21px;border-bottom:1px solid #d8e6f6}
+.ws-receipt-field{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.ws-receipt-field span{color:#637d9b;font-size:10px;letter-spacing:.065em;font-weight:800;text-transform:uppercase}
+.ws-receipt-field strong{font-size:14px;font-weight:750;color:#162f50;line-height:1.42}
+.ws-receipt-section{padding:22px 0 20px;border-bottom:1px solid #dce8f7}
+.ws-receipt-section h4{display:flex;align-items:center;gap:10px;color:#136ce6;font:800 11px 'Space Grotesk',Arial,sans-serif;margin:0 0 15px;letter-spacing:.07em}
+.ws-receipt-section h4 span{font-size:15px;letter-spacing:0;color:#183b65}
+.ws-receipt-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.ws-receipt-item{display:flex;align-items:center;gap:13px;padding:15px;border-radius:12px;background:#f0f6ff;border:1px solid #d9eaff;margin-bottom:13px}
+.ws-item-symbol{display:grid;place-content:center;border:1px solid #9ccaff;background:#dceeff;color:#136ce6;border-radius:12px;font-size:24px;width:52px;height:52px;flex:none}
+.ws-receipt-item strong{display:block;color:#0e315f;font-weight:800;font-size:17px;line-height:1.4;overflow-wrap:anywhere}
+.ws-receipt-item small{display:block;color:#68819c;font-size:11px;margin-top:5px;line-height:1.5}
+.ws-receipt-total{background:linear-gradient(95deg,#e6f1ff,#f1f7ff);border-left:5px solid #1877f2;padding:17px 20px;margin-top:17px;border-radius:0 12px 12px 0;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.ws-receipt-total span{color:#547397;font-size:11px;font-weight:900;letter-spacing:.09em}
+.ws-receipt-total strong{color:#075ccf;font:900 28px 'Space Grotesk',Arial,sans-serif;white-space:nowrap}
+.ws-warranty-copy{font-size:15px;font-weight:750;color:#113661;margin:0 0 10px}
+.ws-warranty-legal{font-size:12px;line-height:1.7;color:#607994;margin:0}
+.ws-receipt-notes p{font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;color:#536b86}
+.ws-receipt-finish{padding:22px 0 0;text-align:center}
+.ws-receipt-finish div{font-size:10px;color:#748ba6}
+.ws-receipt-finish strong{display:block;margin-top:12px;font:900 15px 'Space Grotesk',Arial,sans-serif;letter-spacing:.14em;color:#0e4387}
+.ws-receipt-finish p{font-size:10px;line-height:1.6;color:#748ba6;max-width:430px;margin:12px auto 0}
+.ws-receipt-hint{font-size:11px;color:#b4cce6;line-height:1.55;margin:0 0 12px}
+#dialog-footer:has([data-receipt-action]) .btn{border-color:#397cc3}
+#dialog-footer [data-receipt-action="download"],#dialog-footer [data-receipt-action="share"]{background:#207eea;color:white;border:1px solid #4b9cf1;font-weight:800}
+#dialog-footer [data-receipt-action="print"]{background:#1d3e65;color:#dceeff;border:1px solid #4e8fc7}
+@media(max-width:600px){
+ #modal-root:has(.ws-receipt){padding:6px}
+ #modal-root:has(.ws-receipt) .dialog{max-height:97dvh;border-radius:12px}
+ #modal-root:has(.ws-receipt) .dialog-header{padding:12px 14px}
+ #modal-root:has(.ws-receipt) .dialog-header h2{font-size:15px}
+ #modal-root:has(.ws-receipt) .dialog-content{padding:9px}
+ #modal-root:has(.ws-receipt) .dialog-footer{padding:10px 8px;gap:6px}
+ #modal-root:has(.ws-receipt) .dialog-footer .btn{font-size:11px;padding:9px 9px;flex:1}
+ .ws-receipt-hero{padding:19px 16px 13px}
+ .ws-receipt-pad{padding:18px 16px}
+ .ws-logo-icon{flex-basis:47px;height:47px;border-radius:12px}
+ .ws-logo-icon b{font-size:21px}
+ .ws-identity-title{font-size:23px}
+ .ws-identity-sub{font-size:9px}
+ .ws-receipt-hero-foot{margin-top:18px}
+ .ws-receipt-section{padding:18px 0}
+ .ws-receipt-meta{gap:8px}
+ .ws-receipt-fields{gap:13px}
+ .ws-receipt-field strong{font-size:12px}
+ .ws-receipt-total{flex-direction:column;align-items:flex-start;gap:5px}
+ .ws-receipt-total strong{font-size:27px}
+}
+@media print{
+ @page{size:A5 portrait;margin:0}
+ body:has(.ws-receipt) *{visibility:hidden!important}
+ body:has(.ws-receipt) #modal-root,
+ body:has(.ws-receipt) #modal-root .dialog,
+ body:has(.ws-receipt) #modal-root .dialog-content,
+ body:has(.ws-receipt) #modal-root .ws-receipt,
+ body:has(.ws-receipt) #modal-root .ws-receipt *{visibility:visible!important}
+ body:has(.ws-receipt) #modal-root{position:absolute!important;inset:0!important;padding:0!important;
+  display:block!important;background:#fff!important;backdrop-filter:none!important}
+ body:has(.ws-receipt) #modal-root .dialog{width:148mm!important;max-width:none!important;
+  max-height:none!important;display:block!important;border:0!important;background:white!important;
+  box-shadow:none!important;overflow:visible!important;animation:none!important;border-radius:0!important}
+ body:has(.ws-receipt) #modal-root .dialog-header,
+ body:has(.ws-receipt) #modal-root .dialog-footer{display:none!important}
+ body:has(.ws-receipt) #modal-root .dialog-content{padding:0!important;overflow:visible!important;
+  background:#fff!important}
+ body:has(.ws-receipt) .ws-receipt{box-shadow:none!important;border-radius:0!important;
+  width:148mm!important;max-width:148mm!important}
+ body:has(.ws-receipt){background:white!important}
+ body:has(.ws-receipt) .ws-receipt-hero,
+ body:has(.ws-receipt) .ws-receipt-total,
+ body:has(.ws-receipt) .ws-receipt-item{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}
