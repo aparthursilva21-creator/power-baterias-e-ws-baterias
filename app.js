@@ -17,7 +17,8 @@ const MENU = [
 const CATEGORIES = { gasoline: 'Gasolina', delivery: 'Entregas', recovery_parts: 'Peças de recuperação', materials: 'Materiais', other: 'Outros' };
 const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Transferência', other: 'Outro' };
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
-let api = null, user = null, role = null, current = 'dashboard';
+let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
+if(!MENU.some(x=>x[0]===current))current='dashboard';
 let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
@@ -149,6 +150,14 @@ function syncSoon(){
   liveRefreshDebounce=setTimeout(()=>{if(api && ready && !refreshing && !submitting)void loadAll(true);},600);
 }
 window.addEventListener('pbws:ready',e=>void boot(e.detail));
+window.addEventListener('pbws:go-section',e=>{
+ const view=e.detail?.view;
+ if(!MENU.some(x=>x[0]===view))return;
+ if(view==='expenses'&&!canExpense())return;
+ current=view;report=null;if(ready)render();
+ if(view==='reports'&&ready)void fetchReport();
+});
+
 window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
   api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[]};
@@ -237,7 +246,7 @@ function settlementView() {
   return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(b?.code||shortId(s.id))+'</div><div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(s.paid_cents)+'</td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
  }).join('');
  const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto '+shortId(x.id)+'</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(x.total_paid_cents)+'</strong><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
- return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?button('✓ Acertar selecionadas','batch-settle'):'')+
+ return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?'<div class="btn-row">'+button('✓ Acertar selecionadas','batch-settle')+(pending.length?button('🔔 Cobrar WS','remind-ws','secondary'):'')+'</div>':'')+
  '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+Number(s.paid_cents),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
  panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Já pago','Falta','Situação',''],rowsHtml))+
  panel('Últimos acertos em lote','<div class="panel-body lined-list">'+batchesHtml+'</div>')+
@@ -321,6 +330,7 @@ document.addEventListener('click',async e=>{
   if(act==='new-sale')openSale();
   if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
   if(act==='batch-settle')openBatch();
+  if(act==='remind-ws')await remindWS();
   if(act==='new-expense')openExpense();
   if(act==='edit-expense')openExpense(rows.expenses.find(x=>x.id===btn.dataset.id));
   if(act==='fetch-report')await fetchReport();
@@ -418,6 +428,26 @@ function openSettlement(s) {
   void runRpc('manage_used_settlement',{p_settlement_id:s.id,p_action:d.action,p_amount_cents:value,p_reason:d.reason||null},'Acerto atualizado com registro de auditoria.');
  });
 }
+
+async function remindWS(){
+ if(!canPay())return toast('Somente Sandro ou administrador podem cobrar acertos.','error');
+ const targetIds=[...selectedSettle].filter(id=>rows.settlements.some(s=>s.id===id&&remaining(s)>0));
+ const selected=targetIds.length>0;
+ const pending=rows.settlements.filter(s=>remaining(s)>0&&(selected?targetIds.includes(s.id):true));
+ if(!pending.length)return toast('Não existem baterias pendentes para cobrar.','error');
+ const total=pending.reduce((sum,x)=>sum+remaining(x),0);
+ const ok=confirm('Enviar lembrete ao Wanderson sobre '+pending.length+
+   ' bateria(s) pendente(s), somando '+brl(total)+'?');
+ if(!ok)return;
+ try{
+  const {error}=await api.rpc('pbws_remind_ws',{
+    p_settlement_ids:selected?targetIds:null
+  });
+  if(error)throw error;
+  toast('Lembrete registrado para Wanderson. O aviso no celular depende das notificações ativadas.');
+ }catch(err){toast(explain(err),'error');}
+}
+
 function openBatch(){
  if(!canPay())return toast('Seu perfil não pode efetuar acertos.','error');
  const ss=rows.settlements.filter(s=>selectedSettle.has(s.id)&&remaining(s)>0);
