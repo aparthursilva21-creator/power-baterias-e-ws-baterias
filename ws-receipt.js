@@ -80,87 +80,95 @@ export function receiptHTML(sale,battery){
 }
 function paint(data){
  const W=720,H=1018,scale=2;
- const canvas=document.createElement('canvas');canvas.width=W*scale;canvas.height=H*scale;
- const ctx=canvas.getContext('2d',{alpha:false});if(!ctx)throw Error('Não foi possível criar a notinha.');
+ const canvas=document.createElement('canvas');
+ canvas.width=W*scale;canvas.height=H*scale;
+ const ctx=canvas.getContext('2d',{alpha:false});
+ if(!ctx)throw Error('Não foi possível criar o comprovante.');
  ctx.scale(scale,scale);
  const NAVY='#0b2449',BLUE='#1877f2',INK='#102744',SLATE='#516b8d',PALE='#f1f7ff',LINE='#dce8f8';
  const rect=(x,y,w,h,color)=>{ctx.fillStyle=color;ctx.fillRect(x,y,w,h);};
  const line=(x,y,ex,ey,color=LINE,width=1)=>{ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(ex,ey);ctx.stroke();};
- const text=(s,x,y,size=17,color=INK,weight=500,align='left')=>{
-  ctx.fillStyle=color;ctx.font=String(weight)+' '+size+'px Arial, sans-serif';
-  ctx.textAlign=align;ctx.fillText(String(s??''),x,y);ctx.textAlign='left';
+ const text=(str,x,y,size=17,color=INK,weight=500,align='left')=>{
+  ctx.fillStyle=color;ctx.font=String(weight)+' '+size+'px Arial,sans-serif';
+  ctx.textAlign=align;ctx.fillText(String(str??''),x,y);ctx.textAlign='left';
  };
- const wrap=(s,x,y,maxWidth,size=15,color=INK,lineH=22,maxLines=20,weight=500)=>{
+ const wrap=(value,x,y,maxWidth,size=16,color=INK,lineH=21,maxLines=2,weight=500)=>{
   ctx.font=String(weight)+' '+size+'px Arial,sans-serif';
-  const paragraphs=String(s??'').split(/\r?\n/);let lines=[];
-  for(const paragraph of paragraphs){
-   let current='';
-   for(const word of (paragraph||' ').split(/\s+/)){
-    const probe=(current?current+' ':'')+word;
-    if(ctx.measureText(probe).width<=maxWidth){current=probe;}else{
-     if(current)lines.push(current);current=word;
-     while(ctx.measureText(current).width>maxWidth&&current.length>1){
-      let i=1;while(i<current.length&&ctx.measureText(current.slice(0,i+1)).width<=maxWidth)i++;
-      lines.push(current.slice(0,i));current=current.slice(i);
-     }
-    }
+  let lines=[];const words=String(value??'').split(/\s+/);let current='';
+  for(const word of words){
+   const candidate=current?current+' '+word:word;
+   if(ctx.measureText(candidate).width<=maxWidth){current=candidate;continue;}
+   if(current)lines.push(current);
+   current=word;
+   while(ctx.measureText(current).width>maxWidth&&current.length>1){
+    let n=1;while(n<current.length&&ctx.measureText(current.slice(0,n+1)).width<=maxWidth)n++;
+    lines.push(current.slice(0,n));current=current.slice(n);
    }
-   lines.push(current);
   }
-  const clipped=lines.length>maxLines;lines=lines.slice(0,maxLines);
-  if(clipped&&lines.length)lines[lines.length-1]=lines[lines.length-1].slice(0,-2)+'…';
-  lines.forEach((str,i)=>text(str,x,y+i*lineH,size,color,weight));
+  if(current)lines.push(current);
+  if(lines.length>maxLines){lines=lines.slice(0,maxLines);lines[maxLines-1]=lines[maxLines-1].slice(0,-2)+'…';}
+  lines.forEach((v,i)=>text(v,x,y+i*lineH,size,color,weight));
   return y+lines.length*lineH;
  };
- rect(0,0,W,H,'#ffffff');rect(0,0,W,170,NAVY);rect(0,163,W,7,BLUE);
- rect(45,29,86,86,BLUE);text('WS',88,86,39,'#fff',900,'center');
- text('WS BATERIAS',149,76,36,'#fff',800);
- text('Baterias usadas e recuperadas',150,104,16,'#b8d7ff',500);
- text('COMPROVANTE DE VENDA',47,149,19,'#fff',800);
- text('DOCUMENTO NÃO FISCAL',674,149,12,'#bbd6fb',700,'right');
- const pad=48;
- text('REFERÊNCIA DA VENDA',pad,215,13,SLATE,800);
- text(data.code,pad,243,22,INK,800);
- text('DATA DA VENDA',pad+333,215,13,SLATE,800);
- text(data.soldAt,pad+333,243,16,INK,700);
- line(pad,267,W-pad,267);
- let y=292;
- const heading=(number,label)=>{
-  rect(pad,y-17,29,27,BLUE);text(number,pad+14,y+1,14,'#fff',800,'center');
-  text(label,pad+41,y+1,19,INK,800);y+=31;
- };
- heading('01','Cliente');
- y=wrap(data.customer,pad,y+7,620,20,INK,23,2,700)+2;
- if(data.phone){text('Contato: '+data.phone,pad,y+4,14,SLATE,600);y+=22;}
- y+=12;line(pad,y,W-pad,y);y+=30;
- heading('02','Produto');
- y=wrap([data.brand,data.model].filter(Boolean).join(' · '),pad,y+7,614,20,INK,24,2,750)+4;
- text('Bateria usada / recuperada · 1 unidade',pad,y+3,15,SLATE,600);y+=25;
- const tags=[];
- if(data.amperage)tags.push(data.amperage+' Ah');
- if(data.serial)tags.push('Série: '+data.serial);
- if(data.plate)tags.push('Placa: '+data.plate);
- if(tags.length)y=wrap(tags.join('    •    '),pad,y+4,620,13,SLATE,19,2,600)+4;
- y+=8;line(pad,y,W-pad,y);y+=30;
- heading('03','Pagamento e valor');
- text('FORMA INFORMADA',pad,y+6,12,SLATE,750);text(data.payment,pad,y+27,18,INK,700);y+=52;
- rect(pad,y,624,80,PALE);rect(pad,y,8,80,BLUE);
- text('VALOR DA VENDA',pad+24,y+31,15,SLATE,800);
- text(money(data.price),W-pad-24,y+54,34,BLUE,850,'right');y+=98;
- heading('04','Garantia');
- text(warranty(data.warranty),pad,y+8,17,INK,750);y+=34;
- y=wrap('A garantia legal prevista no CDC permanece aplicável.',pad,y+4,615,14,SLATE,20,2,500)+8;
- if(data.notes){text('OBSERVAÇÕES',pad,y+11,12,SLATE,800);y+=27;
-  const summary=data.notes.length>130?'Observações completas na próxima página.':data.notes;
-  if(y<890)y=wrap(summary,pad,y,620,13,INK,19,Math.max(1,Math.floor((935-y)/19)),500)+6;
+ rect(0,0,W,H,'#ffffff');
+ rect(0,0,W,174,NAVY);rect(0,166,W,8,BLUE);
+ rect(48,31,80,80,BLUE);text('WS',88,84,37,'#fff',900,'center');
+ text('WS BATERIAS',151,75,37,'#fff',850);
+ text('COMPROVANTE DE VENDA',151,103,14,'#c0ddff',700);
+ text('DOCUMENTO NÃO FISCAL',48,147,13,'#deecff',750);
+
+ text('VENDA REALIZADA EM',48,215,12,SLATE,800);
+ text(data.soldAt,48,242,18,INK,800);
+ text('COMPROVANTE',458,215,12,SLATE,800);
+ text('WS BATERIAS',458,242,18,BLUE,800);
+ line(48,266,672,266);
+
+ text('DADOS DO CLIENTE',48,298,15,BLUE,800);
+ wrap(data.customer,48,329,610,19,INK,23,2,750);
+ if(data.phone)text('Telefone: '+data.phone,48,365,13,SLATE,600);
+ line(48,385,672,385);
+
+ text('BATERIA VENDIDA',48,418,15,BLUE,800);
+ rect(48,435,624,90,PALE);
+ rect(48,435,6,90,BLUE);
+ wrap(data.productName,70,468,574,23,INK,27,2,850);
+ text('Bateria usada / recuperada',70,504,13,SLATE,550);
+
+ // Quadro de itens, como em um comprovante de loja, sem nenhum código interno.
+ const yy=547;
+ rect(48,yy,624,31,NAVY);
+ text('DESCRIÇÃO',59,yy+21,12,'#fff',800);
+ text('QTD.',427,yy+21,12,'#fff',800);
+ text('VALOR',659,yy+21,12,'#fff',800,'right');
+ text(data.productName.length>36?data.productName.slice(0,33)+'…':data.productName,59,600,15,INK,700);
+ text('1',435,600,15,INK,700);
+ text(money(data.price),659,600,15,INK,750,'right');
+ line(48,618,672,618);
+ if(data.amperage||data.plate){
+  text([data.amperage?data.amperage+' Ah':'',data.plate?'Placa: '+data.plate:''].filter(Boolean).join('  ·  '),48,642,13,SLATE,550);
  }
- rect(0,955,W,63,NAVY);
- text('WS BATERIAS   •   Emitido em '+data.issuedAt,48,981,13,'#e2efff',700);
- text('Comprovante não fiscal • Não comprova quitação bancária',48,1001,11,'#b8d7ff',500);
+ text('PAGAMENTO INFORMADO: '+data.payment,48,674,14,INK,700);
+ rect(48,690,624,83,PALE);rect(48,690,6,83,BLUE);
+ text('TOTAL DA VENDA',70,724,15,SLATE,800);
+ text(money(data.price),652,752,34,BLUE,900,'right');
+
+ text('GARANTIA REGISTRADA',48,813,15,BLUE,800);
+ text(warranty(data.warranty),48,841,17,INK,750);
+ wrap('A garantia legal prevista no Código de Defesa do Consumidor permanece preservada.',48,866,622,13,SLATE,19,2,500);
+
+ if(data.notes){
+  text('OBSERVAÇÕES',48,920,12,SLATE,800);
+  if(data.notes.length>75 || data.notes.includes('\n'))
+   text('Veja as observações completas na próxima página.',48,941,12,INK,600);
+  else wrap(data.notes,48,940,621,11,INK,14,1,500);
+ }
+ rect(0,960,W,58,NAVY);
+ text('WS BATERIAS  •  Emitido em '+data.issuedAt,48,984,12,'#deecff',700);
+ text('Comprovante não fiscal • Não comprova quitação bancária',48,1002,11,'#adcdf1',500);
  return canvas;
 }
 function fullNotesPages(data){
- if(!data.notes || data.notes.length<=130)return [];
+ if(!data.notes || (data.notes.length<=75 && !data.notes.includes('\n')))return [];
  const W=720,H=1018,scale=2;
  const measure=document.createElement('canvas').getContext('2d');
  measure.font='500 18px Arial, sans-serif';
@@ -200,7 +208,8 @@ function fullNotesPages(data){
   ctx.fillStyle='#173a65';ctx.font='800 22px Arial,sans-serif';
   ctx.fillText('Observações completas',50,233);
   ctx.fillStyle='#506a87';ctx.font='600 15px Arial,sans-serif';
-  ctx.fillText('Venda: '+data.code+'  •  Realizada em '+data.soldAt,50,266);
+  ctx.fillText('Bateria: '+(data.productName.length>32?data.productName.slice(0,29)+'…':data.productName),50,266);
+  ctx.fillText('Venda em '+data.soldAt,50,287);
   ctx.strokeStyle='#d6e6f8';ctx.beginPath();ctx.moveTo(50,292);ctx.lineTo(670,292);ctx.stroke();
   ctx.fillStyle='#183251';ctx.font='500 18px Arial,sans-serif';
   lines.slice(page,page+25).forEach((line,i)=>ctx.fillText(line,50,337+i*23));
@@ -254,7 +263,10 @@ export async function receiptPDFFile(sale,battery){
   return {bytes:new Uint8Array(await jpeg.arrayBuffer()),width:canvas.width,height:canvas.height};
  }));
  const pdf=pdfBytes(images);
- return new File([pdf],'WS-Baterias-Comprovante-'+data.code.replace(/[^a-z0-9_-]/ig,'-')+'.pdf',{type:'application/pdf'});
+ const slug=data.productName.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+   .replace(/[^a-z0-9]+/ig,'-').replace(/^-|-$/g,'').slice(0,65)||'Bateria';
+ const day=String(data.soldDate).replace(/[^0-9-]/g,'-');
+ return new File([pdf],'WS-Baterias-'+slug+'-'+day+'.pdf',{type:'application/pdf'});
 }
 export async function downloadReceipt(sale,battery){
  const file=await receiptPDFFile(sale,battery),url=URL.createObjectURL(file);
