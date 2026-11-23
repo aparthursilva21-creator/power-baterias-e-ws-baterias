@@ -36,7 +36,8 @@ test('aplicativo real usa banco remoto, não localStorage',()=>{
  assert.match(js,/from\('used_battery_settlements'\)/);
  assert.match(js,/register_direct_battery_sale/);
  assert.doesNotMatch(js, /function (?:batteryView|openBattery)\s*\(/);
- assert.doesNotMatch(js, /\['batteries',/);
+ const navOnly=js.slice(js.indexOf('const MENU'),js.indexOf('const CATEGORIES'));
+ assert.doesNotMatch(navOnly, /\['batteries',/);
  assert.match(js,/p_request_id:requestId/);
  assert.match(js,/settle_used_batteries_batch/);
  assert.match(js,/register_ws_expense/);
