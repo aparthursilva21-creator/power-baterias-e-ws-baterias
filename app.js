@@ -411,7 +411,7 @@ document.addEventListener('click',async e=>{
   if(act==='remind-ws')await remindWS();
   if(act==='new-expense')openExpense();
   if(act==='new-historical-expense')openExpense(null,true);
-  if(act==='edit-expense')openExpense(rows.expenses.find(x=>x.id===btn.dataset.id));
+  if(act==='edit-expense')openExpense((expenseBranch==='power'?rows.powerExpenses:rows.expenses).find(x=>x.id===btn.dataset.id));
   if(act==='fetch-report')await fetchReport();
   if(act==='export-csv')exportSales();
  }catch(err){toast(explain(err),'error');}
@@ -652,39 +652,63 @@ function openBatch(){
  });
 }
 function openExpense(x=null,historical=false){
- if(!canExpense())return toast('Seu perfil não pode registrar despesas da WS.','error');
- const creating=!x;
- const today=dayKey(new Date());
- const body='<form id="expense-form" class="field-grid">'+
- (creating?
-  (historical?'<div class="note wide">Informe quando o gasto aconteceu. Se não souber o horário, deixe-o em branco. O sistema também registrará quando você cadastrou a despesa.</div>':'')+
-  selectField('Categoria','category',Object.entries(CATEGORIES),'gasoline')+
-  field(historical?'Data real do gasto':'Data da despesa','spent','date',historical?'':today,'required max="'+today+'"')+
-  (historical?field('Horário do gasto (opcional)','spent_time','time',''):'')
+ if(!canExpense())return toast('Seu perfil não pode registrar despesas.','error');
+ const power=expenseBranch==='power';
+ if((power&&!canViewPowerExpenses())||(!power&&!canViewWSExpenses()))
+  return toast('Sua conta não tem acesso às despesas desta empresa.','error');
+ const creating=!x,today=dayKey(new Date());
+ const category=power?'Power Baterias':'WS Baterias';
+ const body='<div class="note">Empresa: <b>'+category+'</b>. As despesas de cada empresa são contabilizadas separadamente. O horário do cadastro fica registrado automaticamente.</div>'+
+ '<form id="expense-form" class="field-grid" style="margin-top:14px">'+
+ (creating?selectField('Categoria','category',Object.entries(CATEGORIES),'gasoline'):'')+
+ ((creating||power)?
+   field(historical?'Data real do gasto':'Data do gasto','spent','date',
+     x?.spent_on||(historical?'':today),'required max="'+today+'"')+
+   ((historical||power)?field('Horário do gasto (opcional)','spent_time','time',
+     x?.spent_at?new Intl.DateTimeFormat('en-GB',{timeZone:BR_TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x.spent_at)):'',
+     ''):'')
   :'')+
  field(creating?'Valor gasto (R$)':'Valor corrigido (R$)','amount','number',fromCents(x?.amount_cents||0),'min="0.01" step="0.01" required')+
- (creating?
-  field('Descrição','description','text','','maxlength="300" required'):
-  field('Motivo da correção','reason','text','','minlength="5" required'))+
+ ((creating||power)?
+   field('Descrição','description','text',x?.description||'','maxlength="300" required'):
+   '')+
+ (!creating?field('Motivo da correção','reason','text','','minlength="5" maxlength="500" required'):'')+
  '</form>';
- modal(creating?(historical?'Lançar despesa antiga':'Registrar despesa'):'Corrigir despesa',body,
- '<button class="btn secondary" type="button" data-modal-close>Voltar</button>'+
+ modal(creating?(historical?'Lançar gasto antigo':'Registrar despesa'):'Corrigir despesa',
+ body,'<button type="button" class="btn secondary" data-modal-close>Voltar</button>'+
  '<button type="submit" class="btn" form="expense-form">Salvar</button>');
  $('#expense-form').addEventListener('submit',e=>{
   e.preventDefault();
   try{
    const d=Object.fromEntries(new FormData(e.currentTarget));
    const amount=cents(d.amount);
-   if(amount<=0)throw new Error('A despesa deve ser maior que zero.');
-   const past=creating&&(historical||d.spent<today);
-   const args=creating?{
-      p_category:d.category,p_amount_cents:amount,p_spent_on:d.spent,p_description:d.description
-   }:{
-      p_expense_id:x.id,p_new_amount_cents:amount,p_reason:d.reason
-   };
-   if(past)args.p_spent_at_local=d.spent_time?d.spent+'T'+d.spent_time:null;
-   void runRpc(creating?(past?'register_ws_expense_historical':'register_ws_expense'):'correct_ws_expense',args,
-    creating?(past?'Gasto antigo lançado na data escolhida.':'Despesa registrada.'):'Despesa corrigida com auditoria.');
+   if(amount<=0)throw new Error('Informe um valor maior que zero.');
+   const prior=creating&&(historical||d.spent<today);
+   let name,args,success;
+   if(power){
+     const when=d.spent_time?d.spent+'T'+d.spent_time:null;
+     if(creating){
+      name='register_power_expense';
+      args={p_category:d.category,p_amount_cents:amount,p_spent_on:d.spent,
+       p_description:d.description,p_spent_at_local:when,p_historical:prior};
+      success='Gasto da Power registrado na data correta.';
+     }else{
+      name='correct_power_expense';
+      args={p_expense_id:x.id,p_amount_cents:amount,p_spent_on:d.spent,
+       p_description:d.description,p_spent_at_local:when,p_reason:d.reason};
+      success='Despesa Power corrigida, com auditoria.';
+     }
+   }else if(creating){
+     name=prior?'register_ws_expense_historical':'register_ws_expense';
+     args={p_category:d.category,p_amount_cents:amount,p_spent_on:d.spent,p_description:d.description};
+     if(prior)args.p_spent_at_local=d.spent_time?d.spent+'T'+d.spent_time:null;
+     success=prior?'Despesa antiga da WS registrada na data correta.':'Despesa da WS registrada.';
+   }else{
+     name='correct_ws_expense';
+     args={p_expense_id:x.id,p_new_amount_cents:amount,p_reason:d.reason};
+     success='Despesa WS corrigida com auditoria.';
+   }
+   void runRpc(name,args,success);
   }catch(err){toast(explain(err),'error');}
  });
 }
