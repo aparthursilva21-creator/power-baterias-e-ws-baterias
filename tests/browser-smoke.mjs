@@ -75,6 +75,11 @@ async function scenario(width,height){
   await page.goto('http://127.0.0.1:'+port+'/',{waitUntil:'domcontentloaded'});
   await page.locator('.stat-grid .stat-card').first().waitFor({timeout:10000});
   assert.equal(await page.locator('.stat-card').count(),4,'painel deve ter 4 cartões');
+  assert.ok(await page.locator('#pbws-bell').isVisible(),'sininho aparece no painel');
+  await page.locator('#pbws-bell').click();
+  assert.ok(await page.locator('#pbws-notif-panel').isVisible(),'central de avisos abre');
+  assert.ok(await page.locator('#pbws-notif-list').isVisible(),'lista de notificacoes visivel');
+  await page.locator('#pbws-close-notif').click();
   if(width<600){
     assert.ok(await page.locator('#bottom-nav').isVisible(),'barra inferior visível no celular');
     const overflow=await page.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
