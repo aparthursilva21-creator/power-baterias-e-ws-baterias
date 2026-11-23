@@ -718,7 +718,7 @@ function openEditSale(s){
  const body='<div class="note">Corrigir a venda '+esc(b.code)+'. <b>A data e hora em que a venda aconteceu podem ser alteradas.</b> O horário do cadastro e o responsável originais continuam preservados. Toda correção exige motivo e fica no histórico. O repasse ao Sandro é ajustado na aba Acertos.</div>'+
  '<form id="edit-sale-form" class="field-grid" style="margin-top:16px">'+
  field('Data e hora da venda (Brasília)','sold_when','datetime-local',
-   brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide")+
+   brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide"')+
  '<div class="note wide">Cadastrada originalmente em '+stamp(s.recorded_at||s.sold_at)+
   '. Uma mudança da data da venda afetará o mês do relatório e o início da garantia, sem apagar o registro original.</div>'+
  field('Marca','brand','text',b.brand,'maxlength="100" required')+
