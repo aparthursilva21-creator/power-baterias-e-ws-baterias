@@ -10,6 +10,8 @@ Sistema privado de **lançamento direto de vendas de baterias usadas**, garantia
 
 **[Como lançar vendas e gastos antigos, com datas e acertos históricos](docs/LANCAMENTOS_ANTIGOS.md)**
 
+**[Como gerar e compartilhar a notinha azul da WS Baterias](docs/COMPROVANTE_WS.md)**
+
 ## Arquitetura
 
 - HTML, CSS e JavaScript sem build, hospedados no GitHub Pages;
@@ -41,3 +43,7 @@ A cada venda registrada, Sandro recebe um aviso; ao confirmar um acerto, Wanders
 ## Lançamentos retroativos
 
 Em **Vendas → Lançar venda antiga**, use a data/hora real do negócio e informe também se o repasse à Power já foi pago e quando. Em **Despesas → Gasto antigo**, informe a data real, o horário quando conhecido e o valor. As datas de cadastro e os responsáveis permanecem separados no banco para auditoria. A aba **Despesas** usa caixas separados: Sandro vê gastos Power, Wanderson vê gastos WS e Arthur pode alternar entre as duas empresas. Relatórios também apresentam as despesas Power isoladas do lucro WS.
+
+## Comprovante de venda WS Baterias
+
+Ao confirmar uma venda, o sistema abre automaticamente o comprovante WS (não fiscal). É possível baixar o PDF, imprimir e compartilhar no celular. Uma segunda via pode ser gerada em **Vendas → Notinha WS**. O documento usa o tema azul WS e preserva a privacidade dos valores internos de repasse e custos de recuperação.
