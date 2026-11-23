@@ -42,7 +42,7 @@ async function scenario(width,height){
       recovery_cost_cents:1200,asking_price_cents:18000,status:'sold',created_at:now,created_by:'00000000-0000-4000-8000-000000000099'}],
       used_battery_sales:[{id:'00000000-0000-4000-8000-000000000012',battery_id:id,customer_name:'Cliente Exemplo',
       sale_price_cents:19000,payment_method:'pix',warranty_days:30,sold_by:'00000000-0000-4000-8000-000000000099',sold_at:now}],
-      used_battery_settlements:[{id:sid,battery_id:id,owed_cents:6000,paid_cents:0,waived_cents:0,created_at:now}],
+      used_battery_settlements:[{id:sid,battery_id:id,sale_id:'00000000-0000-4000-8000-000000000012',owed_cents:6000,paid_cents:0,waived_cents:0,created_at:now}],
       used_settlement_batches:[],used_settlement_batch_items:[],used_settlement_events:[],used_battery_activity:[],
       ws_expenses:[],ws_expense_events:[]
     };
@@ -106,6 +106,12 @@ async function scenario(width,height){
   assert.equal(recorded.p_sale_price_cents,20000);
   assert.equal(recorded.p_transfer_price_cents,6000);
   assert.ok(recorded.p_request_id,'chave de idempotência enviada');
+  await page.locator('[data-act="edit-sale"]').first().click();
+  assert.ok(await page.locator('#edit-sale-form').isVisible(),'correcao de venda acessivel');
+  await page.locator('#modal-close').click();
+  await page.locator('[data-act="cancel-sale"]').first().click();
+  assert.ok(await page.locator('#cancel-sale-form').isVisible(),'cancelamento administrativo acessivel');
+  await page.locator('#modal-close').click();
   await page.locator(side+' [data-view="settlements"]').click();
   // Atualizacoes em tempo real podem redesenhar a linha durante um clique.
   // Envia o evento de selecao e testa a acao resultante, sem flakiness do DOM.
