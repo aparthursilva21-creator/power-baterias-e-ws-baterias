@@ -50,6 +50,7 @@
     <header class="topbar">
       <div class="topbar-title"><span class="eyebrow">Power × WS</span><h1 id="heading">Visão geral</h1><p id="subtitle">Acompanhamento da operação</p></div>
       <div class="topbar-right">
+        <button id="pbws-bell" class="outline-btn notif-bell" type="button" aria-label="Notificações" aria-expanded="false" aria-controls="pbws-notif-panel"><span aria-hidden="true">🔔</span><span id="pbws-bell-count" class="notif-count" hidden>0</span></button>
         <div class="account-pill"><strong id="account-details">Conta autorizada</strong><span id="role-label">Verificando perfil</span></div>
         <button id="google-logout" class="outline-btn" type="button" hidden>Sair</button>
       </div>
@@ -57,6 +58,12 @@
     <main id="app-main" aria-live="polite"><div class="loading"><span class="loader"></span> Preparando sistema...</div></main>
   </div>
   <nav id="bottom-nav" class="bottom-nav" aria-label="Menu móvel"></nav>
+  <aside id="pbws-notif-panel" class="notif-panel" aria-label="Central de notificações" hidden>
+    <div class="notif-top"><div><span class="eyebrow">Power × WS</span><h2>Notificações</h2></div><button id="pbws-close-notif" class="outline-btn" type="button" aria-label="Fechar notificações">✕</button></div>
+    <div class="notif-controls"><button id="pbws-mark-all" class="btn secondary tiny" type="button">✓ Marcar todas como lidas</button></div>
+    <div id="pbws-notif-list" class="notif-list" aria-live="polite"><div class="notif-empty">Carregando notificações...</div></div>
+    <div class="notif-push-settings"><h3>Avisos no celular</h3><p id="pbws-push-help" role="status">Consulte as permissões do navegador.</p><div class="btn-row"><button id="pbws-enable-push" class="btn" type="button">🔔 Ativar notificações</button><button id="pbws-disable-push" class="btn secondary" type="button" hidden>Desativar neste celular</button></div></div>
+  </aside>
 </div>
 <div id="modal-root" hidden role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
@@ -68,5 +75,6 @@
 <div id="toast" hidden role="status" aria-live="polite"></div>
 <script type="module" src="./auth.js?v=4"></script>
 <script type="module" src="./app.js?v=5"></script>
+<script type="module" src="./notifications.js?v=1"></script>
 </body>
 </html>
