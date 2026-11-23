@@ -30,6 +30,12 @@ function zonedDateParts(value){
 }
 function monthKey(value){const p=zonedDateParts(value);return p.year+'-'+p.month;}
 function dayKey(value){const p=zonedDateParts(value);return p.year+'-'+p.month+'-'+p.day;}
+function brazilLocalNow(){
+ const t=new Intl.DateTimeFormat('en-GB',{timeZone:BR_TIMEZONE,hour:'2-digit',minute:'2-digit',hour12:false})
+  .formatToParts(new Date());
+ const x=part=>t.find(v=>v.type===part)?.value||'00';
+ return dayKey(new Date())+'T'+x('hour')+':'+x('minute');
+}
 let reportMonth = monthKey(new Date());
 const cents = value => {
   const s = String(value ?? '').trim().replace(',', '.');
@@ -46,6 +52,7 @@ const stamp = s => s ? new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day
 const dateBR = s => s ? (/^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4) : new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s))) : '—';
 const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
 const canSell = () => role === 'ws' || role === 'admin';
+const canBackdateSale = () => ['ws','power','admin'].includes(role);
 const canPay = () => role === 'power' || role === 'admin';
 const canExpense = () => role === 'ws' || role === 'admin';
 const shortId = id => String(id || '').slice(0,8);
@@ -239,10 +246,16 @@ function salesView(){
  const actions=canSell()&&(role==='admin'||s.sold_by===user?.id)?
     '<div class="row-actions"><button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>'+
     (role==='admin'?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Cancelar</button>':'')+'</div>':'—';
- return '<tr><td><strong>'+stamp(s.sold_at)+'</strong><div class="cell-sub">Por '+esc(staffName(s.sold_by))+'</div></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
+ return '<tr><td><strong>'+stamp(s.sold_at)+'</strong>'+
+ (s.is_historical?'<div style="margin-top:4px">'+statusBadge('Venda antiga','gray')+'</div>':'')+
+ '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
  }).join('');
- return heading('Vendas','Cada venda tem cliente, bateria, valor, data, horário e responsável.',canSell()?button('+ Registrar venda','new-sale'):'')+
- panel('Histórico de vendas',tbl(['Quando / Vendedor','Bateria','Cliente','Venda','Garantia','Acerto','Ações'],content));
+ return heading('Vendas','Cada venda aparece no mês em que aconteceu, mesmo quando cadastrada depois.',
+ '<div class="btn-row">'+
+ (canSell()?button('+ Venda de hoje','new-sale'):'')+
+ (canBackdateSale()?button('◷ Lançar venda antiga','new-historical-sale','secondary'):'')+
+ '</div>')+
+ panel('Histórico de vendas',tbl(['Data da venda / Cadastro','Bateria','Cliente','Venda','Garantia','Acerto','Ações'],content));
 }
 function settlementView() {
  const pending=rows.settlements.filter(x=>remaining(x)>0);
@@ -263,8 +276,11 @@ function settlementView() {
 function expenseView() {
  if(!canExpense())return '<div class="note error">Seu perfil não possui acesso às despesas internas da WS.</div>';
  const sum=rows.expenses.reduce((a,x)=>a+Number(x.amount_cents),0);
- const list=rows.expenses.map(x=>'<tr><td>'+dateBR(x.spent_on)+'</td><td>'+esc(CATEGORIES[x.category]||x.category)+'</td><td><strong>'+brl(x.amount_cents)+'</strong></td><td>'+esc(x.description)+'</td><td>'+stamp(x.created_at)+'<div class="cell-sub">'+esc(staffName(x.created_by))+'</div></td><td><button type="button" class="btn tiny secondary" data-act="edit-expense" data-id="'+x.id+'">Corrigir</button></td></tr>').join('');
- return heading('Despesas WS','Gasolina, entregas, peças, materiais e outros gastos do Wanderson.',button('+ Nova despesa','new-expense'))+
+ const list=rows.expenses.map(x=>'<tr><td>'+(x.spent_at?stamp(x.spent_at):dateBR(x.spent_on))+
+ (x.is_historical?'<div class="cell-sub">Gasto antigo</div>':'')+'</td><td>'+esc(CATEGORIES[x.category]||x.category)+'</td><td><strong>'+brl(x.amount_cents)+'</strong></td><td>'+esc(x.description)+'</td><td>'+stamp(x.created_at)+'<div class="cell-sub">'+esc(staffName(x.created_by))+'</div></td><td><button type="button" class="btn tiny secondary" data-act="edit-expense" data-id="'+x.id+'">Corrigir</button></td></tr>').join('');
+ return heading('Despesas WS','Gasolina, entregas, peças, materiais e outros gastos do Wanderson.',
+ '<div class="btn-row">'+button('+ Nova despesa','new-expense')+
+ button('◷ Gasto antigo','new-historical-expense','secondary')+'</div>')+
  '<div class="stat-grid">'+stat('Despesas registradas',brl(sum),true)+stat('Lançamentos',String(rows.expenses.length))+'</div>'+
  panel('Gastos da operação',tbl(['Data do gasto','Categoria','Valor','Descrição','Registro / Autor',''],list))+
  '<div class="note">Para evitar descontar o mesmo gasto duas vezes do lucro, não registre uma peça como despesa geral se ela já foi incluída no custo de recuperação da bateria.</div>';
@@ -341,12 +357,14 @@ document.addEventListener('click',async e=>{
  try {
   if(act==='refresh')await loadAll(true);
   if(act==='new-sale')openSale();
+  if(act==='new-historical-sale')openSale(true);
   if(act==='edit-sale')openEditSale(rows.sales.find(s=>s.id===btn.dataset.id));
   if(act==='cancel-sale')openCancelSale(rows.sales.find(s=>s.id===btn.dataset.id));
   if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
   if(act==='batch-settle')openBatch();
   if(act==='remind-ws')await remindWS();
   if(act==='new-expense')openExpense();
+  if(act==='new-historical-expense')openExpense(null,true);
   if(act==='edit-expense')openExpense(rows.expenses.find(x=>x.id===btn.dataset.id));
   if(act==='fetch-report')await fetchReport();
   if(act==='export-csv')exportSales();
@@ -608,10 +626,10 @@ function exportSales(){
  const rs=rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth);
  if(!rs.length)return toast('Não há vendas para exportar neste mês.','error');
  const csvSafe=x=>{const s=String(x??'');return '"'+( /^[=+\-@\t\r]/.test(s)?"'"+s:s).replace(/"/g,'""')+'"';};
- const matrix=[['Venda em','Bateria','Marca','Cliente','Telefone','Placa','Valor venda (R$)','Repasse Power (R$)','Valor pago (R$)','Saldo (R$)','Status','Vendedor','Garantia (dias)']];
+ const matrix=[['Venda em','Cadastro no sistema','Bateria','Marca','Cliente','Telefone','Placa','Valor venda (R$)','Repasse Power (R$)','Valor pago (R$)','Saldo (R$)','Status','Vendedor','Garantia (dias)']];
  for(const s of rs){
   const b=battery(s.battery_id), st=settleFor(s.battery_id),ss=settlingStatus(st);
-  matrix.push([stamp(s.sold_at),b?.code||'',b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),ss[0],staffName(s.sold_by),s.warranty_days]);
+  matrix.push([stamp(s.sold_at),stamp(s.recorded_at||s.sold_at),b?.code||'',b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),ss[0],staffName(s.sold_by),s.warranty_days]);
  }
  const content='\uFEFF'+matrix.map(r=>r.map(csvSafe).join(';')).join('\r\n');
  const blob=new Blob([content],{type:'text/csv;charset=utf-8;'});
