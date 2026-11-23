@@ -352,7 +352,8 @@ async function authResumeScenario(){
    headers:{'access-control-allow-origin':'*'},
    body:'export function createClient() { return window.__testSupabase; }'}));
  await page.goto('http://127.0.0.1:'+port+'/',{waitUntil:'domcontentloaded'});
- await page.locator('[data-act="new-sale"]').waitFor({timeout:12000});
+ await page.locator('.stat-grid .stat-card').first().waitFor({timeout:12000});
+ await page.locator('#bottom-nav [data-view="sales"]').click();
  await page.locator('[data-act="new-sale"]').click();
  await page.locator('#sale-form [name=customer]').fill('Cliente anotado do WhatsApp');
  await page.locator('#sale-form [name=price]').fill('199.90');
