@@ -547,7 +547,7 @@ function activityView(){
         dateChanged?'Data e horário corrigidos':'Venda corrigida',
       detail:(b?batteryDisplay(b)+' · ':'')+
         (dateChanged?'ANTES: '+stamp(oldDate)+' → DEPOIS: '+stamp(newDate)+' · ':'')+
-        'Motivo: '+x.reason+
+        'Motivo: '+hideInternalBatteryCodes(x.reason)+
         (x.action==='cancelled'?' · Registro preservado para auditoria':'')
     };
   }),
