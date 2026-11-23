@@ -1,0 +1,13 @@
+/* Rascunho privado salvo no servidor — não confundir com venda confirmada. */
+.sale-draft-bar{
+ display:flex;justify-content:space-between;align-items:center;gap:12px;
+ padding:13px 15px;margin-top:12px;
+ border:1px solid #355541;border-radius:12px;background:#17251d;
+ color:#b4d3b7;font-size:12px;line-height:1.5;
+}
+.sale-draft-bar [data-sale-draft-status]{display:block;flex:1;font-weight:600}
+.sale-draft-bar .btn{min-width:max-content}
+@media(max-width:600px){
+ .sale-draft-bar{align-items:flex-start;flex-direction:column;gap:8px}
+ .sale-draft-bar .btn{width:100%;text-align:center}
+}
