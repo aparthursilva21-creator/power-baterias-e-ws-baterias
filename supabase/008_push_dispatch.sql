@@ -47,6 +47,21 @@ create trigger pbws_after_push_queue
 after insert on public.pbws_push_deliveries
 for each statement execute function pbws_private.trigger_push_request();
 
+-- Atualiza o sininho em tempo real; consulta periodica continua como fallback.
+do $publication$
+begin
+  if exists(select 1 from pg_publication where pubname='supabase_realtime')
+  and not exists (
+    select 1 from pg_publication_tables
+    where pubname='supabase_realtime'
+      and schemaname='public'
+      and tablename='pbws_notifications'
+  ) then
+    alter publication supabase_realtime add table public.pbws_notifications;
+  end if;
+end;
+$publication$;
+
 -- A cada 5 minutos: retoma envios que falharam, sem precisar abrir o site.
 select cron.schedule(
   'pbws-push-retry-every-5-min',
