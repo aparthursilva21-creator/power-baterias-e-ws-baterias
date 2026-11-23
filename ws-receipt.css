@@ -94,3 +94,57 @@
  body:has(.ws-receipt) .ws-receipt-total,
  body:has(.ws-receipt) .ws-receipt-item{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 }
+
+
+/* Visual de comprovante comercial: identificação imediata do produto, sem código. */
+.ws-receipt-meta{
+ grid-template-columns:1.2fr .8fr;
+ padding-bottom:18px;
+}
+.ws-receipt-section h4{
+ margin:0 0 13px;letter-spacing:.08em;font-size:12px;font-weight:900;color:#1269d3;
+}
+.ws-receipt-section.ws-items{padding-top:24px}
+.ws-product-feature{
+ display:flex;align-items:center;gap:14px;padding:18px 16px;
+ border:1px solid #cfe2fa;border-radius:12px;background:linear-gradient(100deg,#e9f3ff,#f8fbff);
+ margin-bottom:17px;
+}
+.ws-product-feature-icon{
+ flex:none;display:grid;place-content:center;width:49px;height:49px;
+ border-radius:11px;background:#d4e8ff;color:#0968dd;font-size:27px;
+}
+.ws-product-feature>div:last-child{min-width:0}
+.ws-product-eyebrow{display:block;font-size:10px;letter-spacing:.1em;font-weight:900;color:#547fab;margin-bottom:5px}
+.ws-product-feature strong{display:block;color:#06366b;font-size:21px;line-height:1.28;font-weight:850;overflow-wrap:anywhere}
+.ws-product-feature small{display:block;color:#617e9b;font-size:11px;margin-top:6px}
+.ws-product-table{
+ border-collapse:collapse;border:1px solid #deebfa;width:100%;table-layout:fixed;margin-bottom:15px;
+ font-size:12px;color:#1a3a5d;
+}
+.ws-product-table th{
+ background:#103b72;color:#fff;font-size:10px;text-align:left;letter-spacing:.04em;
+ padding:10px 9px;font-weight:800;
+}
+.ws-product-table td{padding:14px 9px;border-bottom:1px solid #deebfa;vertical-align:top;overflow-wrap:anywhere}
+.ws-product-table td:first-child{font-weight:800}
+.ws-product-table th:nth-child(1){width:41%}
+.ws-product-table th:nth-child(2){width:12%}
+.ws-product-table th:nth-child(3){width:24%}
+.ws-product-table th:nth-child(4){width:23%}
+.ws-product-table td:not(:first-child){white-space:nowrap}
+.ws-product-table td:nth-child(3),.ws-product-table td:nth-child(4){font-variant-numeric:tabular-nums}
+.ws-receipt .ws-specs:empty{display:none}
+.ws-receipt .ws-warranty{border-bottom:0}
+.ws-receipt-finish{margin-top:5px;border-top:1px solid #dce8f7}
+.ws-receipt-finish strong{margin:0 0 8px}
+@media(max-width:600px){
+ .ws-product-feature{padding:13px 11px;gap:10px}
+ .ws-product-feature strong{font-size:17px}
+ .ws-product-feature-icon{width:39px;height:39px;font-size:22px}
+ .ws-product-table{font-size:10px}
+ .ws-product-table th{font-size:8px;padding:9px 5px}
+ .ws-product-table td{padding:10px 5px}
+ .ws-receipt-meta{grid-template-columns:1fr 1fr}
+ .ws-receipt-section h4{font-size:11px}
+}
