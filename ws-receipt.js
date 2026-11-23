@@ -8,53 +8,74 @@ const money=c=>(Number(c||0)/100).toLocaleString('pt-BR',{style:'currency',curre
 const stamp=d=>new Intl.DateTimeFormat('pt-BR',{timeZone:TZ,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(d));
 const payments={pix:'PIX',cash:'Dinheiro',card:'Cartão',other:'Outro',transfer:'Transferência'};
 const warranty=d=>Number(d)>0?Number(d)+' '+(Number(d)===1?'dia':'dias')+' (prazo registrado)':'Sem prazo adicional registrado';
+// O identificador WS-000001 continua somente no banco. O cliente vê a bateria.
+export function soldBatteryName(b){
+ const brand=val(b?.brand),model=val(b?.model);
+ const amperage=Number(b?.amperage_ah);
+ const base=[brand,model].filter(Boolean).join(' ').trim()||'Bateria';
+ return amperage>0 && !new RegExp('\\b'+amperage+'\\s*(?:ah|a\\.?h\\.?)\\b','i').test(base)
+   ?base+' · '+amperage+'Ah':base;
+}
 function details(s,b){
  if(!s||!b||s.cancelled_at)throw Error('Venda não disponível para emitir comprovante.');
  return {
-  code:val(b.code)||'VENDA-'+val(s.id).slice(0,8).toUpperCase(),
+  productName:soldBatteryName(b),
+  brand:val(b.brand),model:val(b.model),
+  amperage:Number(b.amperage_ah)||null,
   customer:val(s.customer_name)||'Não informado',
   phone:val(s.customer_phone),plate:val(s.vehicle_plate),
-  brand:val(b.brand),model:val(b.model),amperage:Number(b.amperage_ah)||null,
-  serial:val(b.serial_number),price:Number(s.sale_price_cents),
-  payment:payments[s.payment_method]||'Outro',warranty:Number(s.warranty_days)||0,
-  soldAt:stamp(s.sold_at),recordedAt:stamp(s.recorded_at||s.sold_at),
-  isHistorical:!!s.is_historical,notes:val(s.notes),issuedAt:stamp(new Date())
+  price:Number(s.sale_price_cents),payment:payments[s.payment_method]||'Outro',
+  warranty:Number(s.warranty_days)||0,
+  soldAt:stamp(s.sold_at),soldDate:new Intl.DateTimeFormat('en-CA',{
+   timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'
+  }).format(new Date(s.sold_at)),
+  notes:val(s.notes),issuedAt:stamp(new Date())
  };
 }
 const field=(label,value)=>'<div class="ws-receipt-field"><span>'+esc(label)+'</span><strong>'+esc(value||'—')+'</strong></div>';
 export function receiptHTML(sale,battery){
  const d=details(sale,battery);
+ const product=esc(d.productName);
  return [
   '<article class="ws-receipt" aria-label="Comprovante de venda WS Baterias">',
   '<div class="ws-receipt-hero">',
   '<div class="ws-receipt-identity"><div class="ws-logo-icon" aria-hidden="true"><b>WS</b><span>▰</span></div>',
-  '<div><div class="ws-identity-overline">COMPROVANTE DIGITAL</div>',
+  '<div><div class="ws-identity-overline">LOJA DE BATERIAS</div>',
   '<div class="ws-identity-title">WS <span>BATERIAS</span></div>',
-  '<div class="ws-identity-sub">Baterias usadas e recuperadas</div></div></div>',
+  '<div class="ws-identity-sub">Comprovante de venda de bateria</div></div></div>',
   '<div class="ws-receipt-hero-foot"><span>COMPROVANTE DE VENDA</span><strong>DOCUMENTO NÃO FISCAL</strong></div></div>',
-  '<div class="ws-receipt-pad"><div class="ws-receipt-meta">',
-  field('Referência da venda',d.code),field('Data da venda',d.soldAt),
-  d.isHistorical?field('Cadastrada no sistema',d.recordedAt):'',
-  '</div><div class="ws-receipt-section"><h4>01 <span>Dados do cliente</span></h4><div class="ws-receipt-fields">',
-  field('Cliente',d.customer),d.phone?field('Contato',d.phone):'',
-  '</div></div><div class="ws-receipt-section"><h4>02 <span>Produto vendido</span></h4>',
-  '<div class="ws-receipt-item"><span class="ws-item-symbol" aria-hidden="true">▰</span><div><strong>',
-  esc([d.brand,d.model].filter(Boolean).join(' · ')),
-  '</strong><small>Bateria usada / recuperada · Quantidade: 1 unidade</small></div></div>',
-  '<div class="ws-receipt-fields">',
+  '<div class="ws-receipt-pad">',
+  '<div class="ws-receipt-meta">',
+  field('Venda realizada em',d.soldAt),
+  field('Documento', 'Comprovante de venda'),
+  '</div>',
+  '<div class="ws-receipt-section ws-customer"><h4>CLIENTE</h4>',
+  '<div class="ws-receipt-fields">',field('Nome',d.customer),
+  d.phone?field('Telefone / WhatsApp',d.phone):'',
+  '</div></div>',
+  '<div class="ws-receipt-section ws-items"><h4>BATERIA VENDIDA</h4>',
+  '<div class="ws-product-feature"><div class="ws-product-feature-icon" aria-hidden="true">▰</div>',
+  '<div><span class="ws-product-eyebrow">PRODUTO</span>',
+  '<strong>',product,'</strong>',
+  '<small>Bateria usada / recuperada</small></div></div>',
+  '<table class="ws-product-table"><thead><tr><th>DESCRIÇÃO</th><th>QTD.</th><th>VALOR UNIT.</th><th>TOTAL</th></tr></thead>',
+  '<tbody><tr><td>',product,'</td><td>1</td><td>',esc(money(d.price)),'</td><td>',esc(money(d.price)),'</td></tr></tbody></table>',
+  '<div class="ws-receipt-fields ws-specs">',
   d.amperage?field('Amperagem',d.amperage+' Ah'):'',
-  d.serial?field('Número de série',d.serial):'',
   d.plate?field('Placa do veículo',d.plate):'',
-  '</div></div><div class="ws-receipt-section"><h4>03 <span>Detalhes da venda</span></h4>',
+  '</div></div>',
+  '<div class="ws-receipt-section ws-payment">',
   '<div class="ws-receipt-fields">',field('Forma de pagamento informada',d.payment),'</div>',
-  '<div class="ws-receipt-total"><span>VALOR DA VENDA</span><strong>',esc(money(d.price)),'</strong></div></div>',
-  '<div class="ws-receipt-section"><h4>04 <span>Garantia</span></h4>',
+  '<div class="ws-receipt-total"><span>VALOR TOTAL DA VENDA</span><strong>',esc(money(d.price)),'</strong></div>',
+  '</div>',
+  '<div class="ws-receipt-section ws-warranty"><h4>GARANTIA REGISTRADA</h4>',
   '<p class="ws-warranty-copy">',esc(warranty(d.warranty)),'</p>',
-  '<p class="ws-warranty-legal">Os direitos de garantia legal previstos no Código de Defesa do Consumidor permanecem preservados.</p></div>',
-  d.notes?'<div class="ws-receipt-section ws-receipt-notes"><h4>05 <span>Observações</span></h4><p>'+esc(d.notes)+'</p></div>':'',
-  '<div class="ws-receipt-finish"><div>Emitido em ',esc(d.issuedAt),' · Horário de Brasília</div>',
-  '<strong>WS BATERIAS</strong><p>Este comprovante documenta a venda registrada. Não substitui documento fiscal obrigatório e não comprova quitação bancária.</p>',
-  '</div></div></article>'
+  '<p class="ws-warranty-legal">A garantia legal prevista no Código de Defesa do Consumidor permanece preservada.</p></div>',
+  d.notes?'<div class="ws-receipt-section ws-receipt-notes"><h4>OBSERVAÇÕES</h4><p>'+esc(d.notes)+'</p></div>':'',
+  '<div class="ws-receipt-finish"><strong>WS BATERIAS</strong>',
+  '<div>Emitido em ',esc(d.issuedAt),' · Horário de Brasília</div>',
+  '<p>Comprovante de venda não fiscal. Não substitui documento fiscal obrigatório nem comprovante bancário de quitação.</p></div>',
+  '</div></article>'
  ].join('');
 }
 function paint(data){
