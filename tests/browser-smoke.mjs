@@ -39,7 +39,7 @@ async function scenario(width,height){
     const now=new Date().toISOString();
     const tables={
       used_batteries:[{id,code:'WS-000001',brand:'Moura',model:'60Ah',amperage_ah:60,serial_number:'TESTE',transfer_price_cents:6000,
-      recovery_cost_cents:1200,asking_price_cents:18000,status:'available',created_at:now,created_by:'00000000-0000-4000-8000-000000000099'}],
+      recovery_cost_cents:1200,asking_price_cents:18000,status:'sold',created_at:now,created_by:'00000000-0000-4000-8000-000000000099'}],
       used_battery_sales:[{id:'00000000-0000-4000-8000-000000000012',battery_id:id,customer_name:'Cliente Exemplo',
       sale_price_cents:19000,payment_method:'pix',warranty_days:30,sold_by:'00000000-0000-4000-8000-000000000099',sold_at:now}],
       used_battery_settlements:[{id:sid,battery_id:id,owed_cents:6000,paid_cents:0,waived_cents:0,created_at:now}],
@@ -51,7 +51,11 @@ async function scenario(width,height){
         select(){return this;},order(){return this;},limit(){return this;},
         then(resolve,reject){return Promise.resolve({data:tables[name]||[],error:null}).then(resolve,reject);}
       };},
-      rpc(name){
+      rpc(name,params){
+        if(name==='register_direct_battery_sale'){
+          window.lastSaleArgs=params;
+          return Promise.resolve({data:'sample-sale-id',error:null});
+        }
         if(name==='get_power_ws_team')return Promise.resolve({data:[{id:'00000000-0000-4000-8000-000000000099',role:'ws',email:'teste@example.test'}],error:null});
         if(name==='get_power_ws_monthly_report')return Promise.resolve({data:{month:'2026-11',role:'admin',sales_count:1,
            sales_revenue_cents:19000,power_repasse_sales_month_cents:6000,recovery_cost_sales_month_cents:1200,
@@ -82,7 +86,21 @@ async function scenario(width,height){
   await page.locator(side+' [data-view="sales"]').click();
   await page.locator('[data-act="new-sale"]').click();
   assert.ok(await page.locator('#sale-form').isVisible(),'formulário de venda acessível');
-  await page.locator('#modal-close').click();
+  assert.equal(await page.locator(side+' [data-view="batteries"]').count(),0,'menu Estoque não existe');
+  assert.equal(await page.locator('#sale-form [name=battery]').count(),0,'venda não depende de seleção do estoque');
+  await page.locator('#sale-form [name=brand]').fill('Moura');
+  await page.locator('#sale-form [name=model]').fill('60Ah');
+  await page.locator('#sale-form [name=price]').fill('200.00');
+  await page.locator('#sale-form [name=transfer]').fill('60.00');
+  await page.locator('#sale-form [name=recovery]').fill('15.00');
+  await page.locator('#sale-form [name=customer]').fill('Cliente de teste');
+  await page.locator('#sale-form button[type=submit]').count(); // formulário tem botão externo
+  await page.locator('.dialog-footer button[form="sale-form"]').click();
+  await page.waitForFunction(()=>!!window.lastSaleArgs);
+  const recorded=await page.evaluate(()=>window.lastSaleArgs);
+  assert.equal(recorded.p_sale_price_cents,20000);
+  assert.equal(recorded.p_transfer_price_cents,6000);
+  assert.ok(recorded.p_request_id,'chave de idempotência enviada');
   await page.locator(side+' [data-view="settlements"]').click();
   await page.locator('[data-select-settle]').first().check({force:true});
   await page.locator('[data-act="batch-settle"]').click();
