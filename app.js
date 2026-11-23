@@ -341,7 +341,7 @@ function openSale(){
  // Um identificador por lançamento permite repetir a mesma solicitação com segurança.
  const requestId=crypto.randomUUID();
  const body='<form id="sale-form" class="field-grid">'+
- '<div class="field wide" style="margin-bottom:2px"><span class="eyebrow">Bateria vendida</span><span class="muted mini">Preencha os dados da bateria na própria venda. Não há cadastro de estoque.</span></div>'+
+ '<div class="field wide" style="margin-bottom:2px"><span class="eyebrow">Bateria vendida</span><span class="muted mini">Preencha os dados da bateria aqui, sem um cadastro anterior.</span></div>'+
  field('Marca da bateria','brand','text','','maxlength="100" required autocomplete="off"')+
  field('Modelo / Tipo','model','text','','maxlength="120" required')+
  field('Amperagem (Ah, opcional)','amperage','number','','min="1" max="500" step="1"')+
@@ -356,7 +356,7 @@ function openSale(){
  selectField('Forma de pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],'pix')+
  field('Garantia em dias','warranty','number','30','min="0" max="365" step="1" required')+
  '<label class="field wide"><span>Observações (opcional)</span><textarea name="notes" maxlength="1200"></textarea></label></form>'+
- '<div class="note" style="margin-top:15px">A venda e a bateria serão lançadas juntas, com data/hora do servidor. O acerto com Sandro ficará pendente imediatamente. Nenhum estoque será movimentado.</div>';
+ '<div class="note" style="margin-top:15px">A venda e a bateria serão lançadas juntas, com data/hora do servidor. O acerto com Sandro ficará pendente imediatamente. O lançamento já cria o histórico necessário para os relatórios.</div>';
  modal('Registrar venda de bateria',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="sale-form">✓ Confirmar venda</button>');
  $('#sale-form').addEventListener('submit',e=>{
   e.preventDefault();
