@@ -520,11 +520,21 @@ function warrantyView(){
 }
 function activityView(){
  const events=[
-  ...rows.saleRevisions.map(x=>({
-    at:x.occurred_at,who:x.actor_id,category:'Venda',
-    description:x.action==='cancelled'?'Venda cancelada':'Venda corrigida',
-    detail:x.reason+' · '+(x.action==='cancelled'?'Registro preservado para auditoria':'Valores anteriores e novos armazenados no banco')
-  })),
+  ...rows.saleRevisions.map(x=>{
+    const oldDate=x.before_data?.sale?.sold_at;
+    const newDate=x.after_data?.sale?.sold_at;
+    const dateChanged=x.action==='corrected'&&oldDate&&newDate&&oldDate!==newDate;
+    const b=x.before_data?.battery||x.after_data?.battery;
+    return {
+      at:x.occurred_at,who:x.actor_id,category:'Venda',
+      description:x.action==='cancelled'?'Venda cancelada':
+        dateChanged?'Data e horário corrigidos':'Venda corrigida',
+      detail:(b?.code?b.code+' · ':'')+
+        (dateChanged?'ANTES: '+stamp(oldDate)+' → DEPOIS: '+stamp(newDate)+' · ':'')+
+        'Motivo: '+x.reason+
+        (x.action==='cancelled'?' · Registro preservado para auditoria':'')
+    };
+  }),
   ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:x.reason+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
   ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:x.description||''})),
   ...rows.powerExpenseEvents.map(x=>({
@@ -616,8 +626,9 @@ function openSale(historical=false,restored=null){
  const draft=restored||draftCache[kind];
  const requestId=draft?.request_id||crypto.randomUUID();
  const body='<form id="sale-form" class="field-grid">'+
- (historical?'<div class="note wide"><b>Venda antiga</b><br>Use a data e a hora reais da venda, no horário de Brasília. O sistema registra separadamente quando você digitou as informações.</div>'+
- field('Data e hora da venda (Brasília)','sold_when','datetime-local','','required max="'+brazilLocalNow()+'" class="wide"'):'')+
+ (historical?'<div class="note wide"><b>Venda antiga</b><br>Use a data e hora reais da venda, no horário de Brasília. O cadastro será registrado separadamente.</div>':'')+
+ '<div class="note wide"><b>Data e hora da venda</b><br>Se aconteceu agora, deixe em branco e o servidor registrará automaticamente. Se já aconteceu, informe o dia e horário reais. A data de cadastro e o usuário ficam preservados.</div>'+
+ field('Data e hora reais da venda (opcional para venda de hoje)','sold_when','datetime-local','','max="'+brazilLocalNow()+'" '+(historical?'required':'')+' class="wide"')+
  '<div class="field wide"><span class="eyebrow">Dados da bateria vendida</span></div>'+
  field('Marca da bateria','brand','text','','maxlength="100" required')+
  field('Modelo / Tipo','model','text','','maxlength="120" required')+
@@ -668,20 +679,31 @@ function openSale(historical=false,restored=null){
     p_payment_method:d.method,p_warranty_days:Number(d.warranty),
     p_customer_phone:d.phone||null,p_vehicle_plate:d.plate||null,p_notes:d.notes||null
    };
+   const customDate=!!d.sold_when;
+   if(historical && !customDate)throw new Error('Informe a data e a hora da venda antiga.');
+   if(customDate){
+    const candidate=new Date(d.sold_when+':00-03:00');
+    if(!Number.isFinite(candidate.getTime())||candidate.getTime()>Date.now())
+      throw new Error('A venda não pode ter data ou hora futuras.');
+    args.p_sold_at_local=d.sold_when;
+   }
    if(historical){
-    if(!d.sold_when)throw new Error('Informe a data e a hora da venda antiga.');
     const paid=cents(d.already_paid);
     if(paid>cents(d.transfer))throw new Error('O valor já pago não pode superar o devido ao Sandro.');
     if(paid>0&&!d.paid_when)throw new Error('Informe a data e a hora do pagamento antigo.');
     if(paid===0&&d.paid_when)throw new Error('Informe o valor pago ou apague a data do pagamento.');
     if(d.paid_when&&d.paid_when<d.sold_when)throw new Error('O acerto não pode ocorrer antes da venda.');
-    args.p_sold_at_local=d.sold_when;
     args.p_prior_paid_cents=paid;
     args.p_paid_at_local=d.paid_when||null;
    }
-   void runRpc(historical?'register_historical_battery_sale':'register_direct_battery_sale',args,
-    historical?'Venda antiga salva no mês correto, com o acerto correspondente.':
-     'Venda registrada! O acerto aparece para Sandro.',
+   void runRpc((historical||customDate)?'register_historical_battery_sale':'register_direct_battery_sale',
+    (historical||customDate)?{
+      ...args,
+      p_prior_paid_cents:args.p_prior_paid_cents??0,
+      p_paid_at_local:args.p_paid_at_local??null
+    }:args,
+    (historical||customDate)?'Venda salva com a data e hora informadas, e acerto atualizado.':
+     'Venda registrada com horário do servidor e acerto pendente.',
     async saleId=>{
       await forgetSaleDraft(kind);
       await openWSReceiptById(saleId);
@@ -694,12 +716,12 @@ function openEditSale(s){
   return toast('Você não tem permissão para corrigir essa venda.','error');
  const b=battery(s.battery_id);
  if(!b)return toast('Dados da bateria não encontrados.','error');
- const body='<div class="note">Corrigir a venda '+esc(b.code)+'. A data e o responsável originais não serão alterados. O repasse ao Sandro deve ser ajustado na aba Acertos.</div>'+
+ const body='<div class="note">Corrigir a venda '+esc(b.code)+'. <b>A data e hora em que a venda aconteceu podem ser alteradas.</b> O horário do cadastro e o responsável originais continuam preservados. Toda correção exige motivo e fica no histórico. O repasse ao Sandro é ajustado na aba Acertos.</div>'+
  '<form id="edit-sale-form" class="field-grid" style="margin-top:16px">'+
- (s.is_historical?
-   field('Data e hora reais da venda (Brasília)','sold_when','datetime-local',
-     brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide"'):
-   '')+
+ field('Data e hora da venda (Brasília)','sold_when','datetime-local',
+   brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide")+
+ '<div class="note wide">Cadastrada originalmente em '+stamp(s.recorded_at||s.sold_at)+
+  '. Uma mudança da data da venda afetará o mês do relatório e o início da garantia, sem apagar o registro original.</div>'+
  field('Marca','brand','text',b.brand,'maxlength="100" required')+
  field('Modelo','model','text',b.model,'maxlength="120" required')+
  field('Amperagem (Ah)','amperage','number',b.amperage_ah||'','min="1" max="500" step="1"')+
@@ -727,7 +749,7 @@ function openEditSale(s){
     recovery_cost_cents:cents(d.recovery),payment_method:d.method,
     warranty_days:Number(d.warranty),notes:d.notes
    };
-   if(s.is_historical)patch.sold_at_local=d.sold_when;
+   patch.sold_at_local=d.sold_when;
    void runRpc('correct_used_battery_sale',{
     p_sale_id:s.id,p_patch:patch,p_reason:d.reason.trim()
    },'Correção salva com data, hora e responsável no histórico.');
