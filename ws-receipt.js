@@ -130,37 +130,109 @@ function paint(data){
  text(warranty(data.warranty),pad,y+8,17,INK,750);y+=34;
  y=wrap('A garantia legal prevista no CDC permanece aplicável.',pad,y+4,615,14,SLATE,20,2,500)+8;
  if(data.notes){text('OBSERVAÇÕES',pad,y+11,12,SLATE,800);y+=27;
-  if(y<890)y=wrap(data.notes,pad,y,620,13,INK,19,Math.max(1,Math.floor((935-y)/19)),500)+6;
+  const summary=data.notes.length>130?'Observações completas na próxima página.':data.notes;
+  if(y<890)y=wrap(summary,pad,y,620,13,INK,19,Math.max(1,Math.floor((935-y)/19)),500)+6;
  }
  rect(0,955,W,63,NAVY);
  text('WS BATERIAS   •   Emitido em '+data.issuedAt,48,981,13,'#e2efff',700);
  text('Comprovante não fiscal • Não comprova quitação bancária',48,1001,11,'#b8d7ff',500);
  return canvas;
 }
-function pdfBytes(jpeg,width,height){
+function fullNotesPages(data){
+ if(!data.notes || data.notes.length<=130)return [];
+ const W=720,H=1018,scale=2;
+ const measure=document.createElement('canvas').getContext('2d');
+ measure.font='500 18px Arial, sans-serif';
+ const lines=[];
+ for(const para of data.notes.replace(/\r/g,'').split('\n')){
+  if(!para.trim()){lines.push('');continue;}
+  let current='';
+  for(const word of para.split(/\s+/)){
+   const probe=(current?current+' ':'')+word;
+   if(measure.measureText(probe).width<=624){current=probe;continue;}
+   if(current)lines.push(current);
+   current=word;
+   while(measure.measureText(current).width>624 && current.length>1){
+    let part=1;
+    while(part<current.length&&measure.measureText(current.slice(0,part+1)).width<=624)part++;
+    lines.push(current.slice(0,part));current=current.slice(part);
+   }
+  }
+  lines.push(current);
+ }
+ const pages=[];
+ for(let page=0;page<lines.length;page+=25){
+  const canvas=document.createElement('canvas');
+  canvas.width=W*scale;canvas.height=H*scale;
+  const ctx=canvas.getContext('2d',{alpha:false});
+  ctx.scale(scale,scale);
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#0b2449';ctx.fillRect(0,0,W,173);
+  ctx.fillStyle='#1877f2';ctx.fillRect(0,165,W,8);
+  ctx.textAlign='left';
+  ctx.fillStyle='#fff';ctx.font='800 33px Arial,sans-serif';
+  ctx.fillText('WS BATERIAS',50,77);
+  ctx.font='600 17px Arial,sans-serif';ctx.fillStyle='#c5dfff';
+  ctx.fillText('ANEXO DO COMPROVANTE DE VENDA',50,109);
+  ctx.font='600 14px Arial,sans-serif';
+  ctx.fillText('DOCUMENTO NÃO FISCAL',50,142);
+  ctx.fillStyle='#173a65';ctx.font='800 22px Arial,sans-serif';
+  ctx.fillText('Observações completas',50,233);
+  ctx.fillStyle='#506a87';ctx.font='600 15px Arial,sans-serif';
+  ctx.fillText('Venda: '+data.code+'  •  Realizada em '+data.soldAt,50,266);
+  ctx.strokeStyle='#d6e6f8';ctx.beginPath();ctx.moveTo(50,292);ctx.lineTo(670,292);ctx.stroke();
+  ctx.fillStyle='#183251';ctx.font='500 18px Arial,sans-serif';
+  lines.slice(page,page+25).forEach((line,i)=>ctx.fillText(line,50,337+i*23));
+  ctx.fillStyle='#0b2449';ctx.fillRect(0,951,W,67);
+  ctx.fillStyle='#c5dfff';ctx.font='600 13px Arial,sans-serif';
+  ctx.fillText('Comprovante não fiscal  •  WS Baterias',50,978);
+  ctx.font='500 12px Arial,sans-serif';
+  ctx.fillText('Página complementar '+(pages.length+1)+'  •  Direitos legais preservados',50,1000);
+  pages.push(canvas);
+ }
+ return pages;
+}
+function pdfBytes(images){
  const encoder=new TextEncoder(),chunks=[];let size=0;
  const add=v=>{const bytes=typeof v==='string'?encoder.encode(v):v;chunks.push(bytes);size+=bytes.length;};
  const offsets=[0],start=n=>{offsets[n]=size;add(n+' 0 obj\n');};
+ const pageCount=images.length;
  add('%PDF-1.4\n%\xC3\xA2\xC3\xA3\xC3\x8F\xC3\x93\n');
  start(1);add('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
- start(2);add('<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n');
- start(3);add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 419.53 595.28] /Resources << /XObject << /Img 5 0 R >> >> /Contents 4 0 R >>\nendobj\n');
- const drawing='q\n419.53 0 0 595.28 0 0 cm\n/Img Do\nQ\n';
- start(4);add('<< /Length '+encoder.encode(drawing).length+' >>\nstream\n');
- add(drawing);add('endstream\nendobj\n');
- start(5);add('<< /Type /XObject /Subtype /Image /Width '+width+' /Height '+height+
-  ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n');
- add(jpeg);add('\nendstream\nendobj\n');
- const xref=size;add('xref\n0 6\n0000000000 65535 f \n');
- for(let n=1;n<=5;n++)add(String(offsets[n]).padStart(10,'0')+' 00000 n \n');
- add('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
- const out=new Uint8Array(size);let pos=0;for(const x of chunks){out.set(x,pos);pos+=x.length;}
+ start(2);add('<< /Type /Pages /Count '+pageCount+' /Kids ['+
+  images.map((_,i)=>(3+i*3)+' 0 R').join(' ')+'] >>\nendobj\n');
+ for(let i=0;i<images.length;i++){
+  const image=images[i];
+  const pageId=3+i*3,contentId=pageId+1,imageId=pageId+2;
+  start(pageId);
+  add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 419.53 595.28] /Resources << /XObject << /Img '+
+    imageId+' 0 R >> >> /Contents '+contentId+' 0 R >>\nendobj\n');
+  const drawing='q\n419.53 0 0 595.28 0 0 cm\n/Img Do\nQ\n';
+  start(contentId);add('<< /Length '+encoder.encode(drawing).length+' >>\nstream\n');
+  add(drawing);add('endstream\nendobj\n');
+  start(imageId);
+  add('<< /Type /XObject /Subtype /Image /Width '+image.width+' /Height '+image.height+
+   ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+
+   image.bytes.length+' >>\nstream\n');
+  add(image.bytes);add('\nendstream\nendobj\n');
+ }
+ const xref=size,objects=2+pageCount*3;
+ add('xref\n0 '+(objects+1)+'\n0000000000 65535 f \n');
+ for(let n=1;n<=objects;n++)add(String(offsets[n]).padStart(10,'0')+' 00000 n \n');
+ add('trailer\n<< /Size '+(objects+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n');
+ const out=new Uint8Array(size);let pos=0;for(const chunk of chunks){out.set(chunk,pos);pos+=chunk.length;}
  return new Blob([out],{type:'application/pdf'});
 }
 export async function receiptPDFFile(sale,battery){
- const data=details(sale,battery),canvas=paint(data);
- const jpeg=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Falha ao preparar PDF.')),'image/jpeg',0.96));
- const pdf=pdfBytes(new Uint8Array(await jpeg.arrayBuffer()),canvas.width,canvas.height);
+ const data=details(sale,battery);
+ const canvases=[paint(data),...fullNotesPages(data)];
+ const images=await Promise.all(canvases.map(async canvas=>{
+  const jpeg=await new Promise((resolve,reject)=>canvas.toBlob(
+    blob=>blob?resolve(blob):reject(Error('Falha ao preparar o PDF.')),'image/jpeg',0.96
+  ));
+  return {bytes:new Uint8Array(await jpeg.arrayBuffer()),width:canvas.width,height:canvas.height};
+ }));
+ const pdf=pdfBytes(images);
  return new File([pdf],'WS-Baterias-Comprovante-'+data.code.replace(/[^a-z0-9_-]/ig,'-')+'.pdf',{type:'application/pdf'});
 }
 export async function downloadReceipt(sale,battery){
