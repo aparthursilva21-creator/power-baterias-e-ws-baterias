@@ -9,7 +9,9 @@ test('arquivos essenciais presentes',()=>{
  for(const path of ['index.html','auth.js','app.js','app.css','config.js','manifest.webmanifest',
  'supabase/002_used_batteries_schema.sql','supabase/003_used_batteries_operations.sql',
  'supabase/004_batches_expenses_reports.sql','supabase/005_staff_realtime.sql',
- 'supabase/006_direct_sale_no_stock.sql']){
+ 'supabase/006_direct_sale_no_stock.sql',
+ 'supabase/007_notifications.sql','supabase/008_push_dispatch.sql','sw.js',
+ 'notifications.js','notifications.css','supabase/functions/pbws-push/index.ts']){
   assert.ok(existsSync(new URL(path,root)), 'Ausente: '+path);
  }
 });
@@ -46,6 +48,10 @@ test('aplicativo real usa banco remoto, não localStorage',()=>{
  assert.match(js,/BR_TIMEZONE = 'America\/Sao_Paulo'/);
  assert.doesNotMatch(js,/localStorage|sessionStorage/);
  assert.match(js,/postgres_changes/);
+ assert.match(js,/pbws_remind_ws/);
+ assert.match(read('notifications.js'),/pbws_save_push_subscription/);
+ assert.match(read('sw.js'),/showNotification/);
+ assert.match(read('index.html'),/id="pbws-bell"/);
 });
 
 test('migrações contêm controle de acesso e transações financeiras',()=>{
@@ -65,6 +71,21 @@ test('migrações contêm controle de acesso e transações financeiras',()=>{
  assert.match(direct,/client_request_id/);
  assert.match(direct,/register_direct_battery_sale/);
  assert.match(direct,/status,[^\n]*notes,created_by/);
+});
+
+test('notificacoes isoladas por usuario e envio sem segredo publico',()=>{
+ const n=read('supabase/007_notifications.sql');
+ const net=read('supabase/008_push_dispatch.sql');
+ const edge=read('supabase/functions/pbws-push/index.ts');
+ assert.match(n,/enable row level security/i);
+ assert.match(n,/recipient_id = \(select auth\.uid\(\)\)/);
+ assert.match(n,/pbws_remind_ws/);
+ assert.match(n,/45 minutes/);
+ assert.match(net,/vault\.decrypted_secrets/);
+ assert.match(net,/cron\.schedule/);
+ assert.match(edge,/SUPABASE_SERVICE_ROLE_KEY/);
+ assert.match(edge,/safeEqual/);
+ assert.doesNotMatch(read('notifications.js'),/SUPABASE_SERVICE_ROLE_KEY|sb_secret_/);
 });
 
 test('PWA apto para uso em Android e iPhone via navegador',()=>{
