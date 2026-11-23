@@ -1,6 +1,7 @@
 -- Emulador mínimo do schema Auth da Supabase para CI. Nunca usar em produção.
 create role authenticated;
 create role anon;
+create role service_role;
 create schema auth;
 create table auth.users (id uuid primary key, email text not null, email_confirmed_at timestamptz);
 create table auth.identities (user_id uuid not null, provider text not null);
