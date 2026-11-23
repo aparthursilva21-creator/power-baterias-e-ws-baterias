@@ -27,7 +27,7 @@ jobs:
       - name: Conferir sintaxe dos rascunhos
         run: node --check sale-drafts.js
       - name: Executar testes de estrutura
-        run: node --test tests/smoke.test.mjs
+        run: node --test tests/smoke.test.mjs tests/draft-store.test.mjs
 
   database:
     name: Verificar financeiro em PostgreSQL
