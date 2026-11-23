@@ -19,9 +19,10 @@ const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Tran
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
 if(!MENU.some(x=>x[0]===current))current='dashboard';
-let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [] };
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
+let expenseBranch='ws';
 let liveChannel=null;let liveRefreshDebounce=null;
 function zonedDateParts(value){
   return Object.fromEntries(new Intl.DateTimeFormat('en-US',{
@@ -54,7 +55,9 @@ const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro'
 const canSell = () => role === 'ws' || role === 'admin';
 const canBackdateSale = () => ['ws','power','admin'].includes(role);
 const canPay = () => role === 'power' || role === 'admin';
-const canExpense = () => role === 'ws' || role === 'admin';
+const canExpense = () => ['ws','power','admin'].includes(role);
+const canViewWSExpenses=()=>role==='ws'||role==='admin';
+const canViewPowerExpenses=()=>role==='power'||role==='admin';
 const shortId = id => String(id || '').slice(0,8);
 const staffName = id => {
   const x = rows.staff.find(p => p.id === id);
@@ -137,6 +140,7 @@ function setupError(msg) {
 }
 async function boot(session) {
   api=session.client;user=session.user;role=session.role;
+  expenseBranch=role==='power'?'power':'ws';
   $('#role-label').textContent=roleName(role);
   $('#account-details').textContent=user.email || 'Conta autorizada';
   nav();
@@ -149,6 +153,7 @@ async function boot(session) {
     .on('postgres_changes',{event:'*',schema:'public',table:'used_battery_settlements'},syncSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'used_settlement_batches'},syncSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'ws_expenses'},syncSoon)
+    .on('postgres_changes',{event:'*',schema:'public',table:'power_expenses'},syncSoon)
     .subscribe();
   if(!timer) timer=setInterval(()=>{if(api&&document.visibilityState==='visible'&&ready&&!submitting)void loadAll(true);},20000);
 }
@@ -167,7 +172,7 @@ window.addEventListener('pbws:go-section',e=>{
 
 window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
-  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[]};
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
   if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
@@ -190,9 +195,13 @@ async function loadAll(silent=false) {
     ['saleRevisions',api.from('used_sale_revisions').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['staff',api.rpc('get_power_ws_team')]
   ];
-  if(canExpense()) requests.push(
+  if(canViewWSExpenses()) requests.push(
     ['expenses',api.from('ws_expenses').select('*').order('spent_on',{ascending:false})],
     ['expenseEvents',api.from('ws_expense_events').select('*').order('occurred_at',{ascending:false}).limit(300)]
+  );
+  if(canViewPowerExpenses())requests.push(
+    ['powerExpenses',api.from('power_expenses').select('*').order('spent_on',{ascending:false})],
+    ['powerExpenseEvents',api.from('power_expense_events').select('*').order('occurred_at',{ascending:false}).limit(300)]
   );
   try {
     const resolved=await Promise.all(requests.map(async([key,promise])=>({key,...await promise})));
@@ -204,7 +213,8 @@ async function loadAll(silent=false) {
     const activeSales=new Set(rows.sales.map(s=>s.id));
     rows.settlements=rows.settlements.filter(s=>activeSales.has(s.sale_id));
     selectedSettle=new Set([...selectedSettle].filter(id=>rows.settlements.some(s=>s.id===id && remaining(s)>0)));
-    if(!canExpense()){rows.expenses=[];rows.expenseEvents=[];}
+    if(!canViewWSExpenses()){rows.expenses=[];rows.expenseEvents=[];}
+    if(!canViewPowerExpenses()){rows.powerExpenses=[];rows.powerExpenseEvents=[];}
     ready=true;
     render();
   } catch(err) {
@@ -309,6 +319,7 @@ function reportSummary(r){
   line('Baterias deste mês com acerto encerrado',String(r.fully_settled_sales_in_month))+
   (showWS ? line('Custos de recuperação em baterias vendidas',brl(r.recovery_cost_sales_month_cents))+line('Despesas WS lançadas no mês',brl(r.ws_expenses_cents))+
   line('Lucro estimado WS (não contábil)',brl(r.ws_estimated_profit_cents)) : '')+
+  ((role==='power'||role==='admin')?line('Despesas próprias da Power no mês',brl(r.power_expenses_cents)):'')+
  '</div></div>'+
  '<div class="note">Lucro estimado = vendas − repasses à Power − custos de recuperação − despesas WS. Esse indicador é operacional, não um demonstrativo contábil ou fiscal. Recebimentos são agrupados pela data efetiva do acerto; vendas pela data de venda.</div>';
 }
@@ -333,6 +344,11 @@ function activityView(){
   })),
   ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:x.reason+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
   ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:x.description||''})),
+  ...rows.powerExpenseEvents.map(x=>({
+    at:x.occurred_at,who:x.actor_id,category:'Despesa Power',
+    description:x.action==='created'?'Cadastrada':'Corrigida',
+    detail:x.reason||''
+  })),
   ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa',description:x.action==='created'?'Cadastrada':'Corrigida',detail:x.reason+' · '+brl(x.new_amount_cents)}))
  ].sort((a,b)=>new Date(b.at)-new Date(a.at)).slice(0,600);
  const content=events.map(x=>'<tr><td>'+stamp(x.at)+'</td><td>'+statusBadge(x.category,'gray')+'</td><td>'+esc(x.description)+'</td><td>'+esc(x.detail)+'</td><td>'+esc(staffName(x.who))+'</td></tr>').join('');
@@ -340,6 +356,14 @@ function activityView(){
  panel('Auditoria da parceria',tbl(['Data / Hora','Área','Ação','Detalhes','Responsável'],content));
 }
 document.addEventListener('click',async e=>{
+ const branch=e.target.closest('[data-expense-branch]');
+ if(branch && canExpense()){
+   const next=branch.dataset.expenseBranch;
+   if((next==='ws'&&canViewWSExpenses())||(next==='power'&&canViewPowerExpenses())){
+     expenseBranch=next;render();
+   }
+   return;
+ }
  const view=e.target.closest('[data-view]');
  if(view) {
   const next=view.dataset.view;
