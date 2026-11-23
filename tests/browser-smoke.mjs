@@ -64,6 +64,10 @@ async function scenario(width,height){
           window.lastHistoricalExpense=params;
           return Promise.resolve({data:'old-expense-id',error:null});
         }
+        if(name==='register_power_expense'){
+          window.lastPowerExpense=params;
+          return Promise.resolve({data:'power-expense-id',error:null});
+        }
         if(name==='get_power_ws_team')return Promise.resolve({data:[{id:'00000000-0000-4000-8000-000000000099',role:'ws',email:'teste@example.test'}],error:null});
         if(name==='get_power_ws_monthly_report')return Promise.resolve({data:{month:'2026-11',role:'admin',sales_count:1,
            sales_revenue_cents:19000,power_repasse_sales_month_cents:6000,recovery_cost_sales_month_cents:1200,
@@ -163,6 +167,19 @@ async function scenario(width,height){
   const expense=await page.evaluate(()=>window.lastHistoricalExpense);
   assert.equal(expense.p_spent_on,'2025-02-12');
   assert.equal(expense.p_spent_at_local,'2025-02-12T09:15');
+  await page.locator('[data-expense-branch="power"]').click();
+  assert.ok(await page.locator('[data-act="new-historical-expense"]').isVisible(),'Administrador vê despesas da Power');
+  await page.locator('[data-act="new-historical-expense"]').click();
+  await page.locator('#expense-form [name=spent]').fill('2025-02-12');
+  await page.locator('#expense-form [name=spent_time]').fill('10:30');
+  await page.locator('#expense-form [name=amount]').fill('55.00');
+  await page.locator('#expense-form [name=description]').fill('Gasolina da Power');
+  await page.locator('.dialog-footer button[form="expense-form"]').click();
+  await page.waitForFunction(()=>!!window.lastPowerExpense);
+  const power=await page.evaluate(()=>window.lastPowerExpense);
+  assert.equal(power.p_amount_cents,5500);
+  assert.equal(power.p_spent_on,'2025-02-12');
+  assert.equal(power.p_spent_at_local,'2025-02-12T10:30');
   await page.locator(side+' [data-view="reports"]').click();
   await page.locator('#monthly-report .stat-card').first().waitFor({timeout:10000});
   assert.ok(await page.locator('#monthly-report').isVisible(),'relatório mensal renderiza');
