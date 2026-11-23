@@ -154,7 +154,7 @@ async function runRpc(name, params, successMessage, afterSave=null) {
   finally { setBusy(false); }
 }
 // Campos não confirmados são salvos como rascunho individual no Supabase.
-// Sem localStorage: a empresa não deixa dados de clientes permanentemente no aparelho.
+// Informações do cliente não são gravadas no armazenamento permanente do navegador.
 function draftMode(historical){return historical?'historical_sale':'sale';}
 function draftStatus(message){
  const form=$('#sale-form'),el=$('[data-sale-draft-status]');
