@@ -1,4 +1,4 @@
-import {receiptHTML,downloadReceipt,shareReceipt,soldBatteryName} from './ws-receipt.js?v=2';
+import {receiptHTML,downloadReceipt,shareReceipt,soldBatteryName} from './ws-receipt.js?v=3';
 import {SaleDraftStore,SALE_DRAFT_MINUTES} from './sale-drafts.js?v=1';
 
 /* Power Baterias × WS Baterias
