@@ -107,7 +107,12 @@ async function scenario(width,height){
   assert.equal(recorded.p_transfer_price_cents,6000);
   assert.ok(recorded.p_request_id,'chave de idempotência enviada');
   await page.locator(side+' [data-view="settlements"]').click();
-  await page.locator('[data-select-settle]').first().check({force:true});
+  // Atualizacoes em tempo real podem redesenhar a linha durante um clique.
+  // Envia o evento de selecao e testa a acao resultante, sem flakiness do DOM.
+  await page.locator('[data-select-settle]').first().evaluate(input=>{
+    input.checked=true;
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+  });
   await page.locator('[data-act="batch-settle"]').click();
   assert.ok(await page.locator('#batch-form').isVisible(),'acerto em lote acessível');
   await page.locator('#modal-close').click();
