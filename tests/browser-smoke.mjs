@@ -290,7 +290,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   const activityText=await page.locator('#app-main').innerText();
   assert.match(activityText,/Data e horário corrigidos/);
   assert.match(activityText,/ANTES: .* → DEPOIS: /);
-  assert.match(activityText,/09\\/02\\/2025/);
+  assert.match(activityText,/09\/02\/2025/);
   await page.locator(side+' [data-view="sales"]').click();
   await page.locator('[data-act="cancel-sale"]').first().click();
   assert.ok(await page.locator('#cancel-sale-form').isVisible(),'cancelamento administrativo acessivel');
