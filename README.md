@@ -8,6 +8,8 @@ Sistema privado de **lançamento direto de vendas de baterias usadas**, garantia
 
 **[Notificações: sininho, cobrança de acertos e Push no Android/iPhone](docs/NOTIFICACOES.md)**
 
+**[Como lançar vendas e gastos antigos, com datas e acertos históricos](docs/LANCAMENTOS_ANTIGOS.md)**
+
 ## Arquitetura
 
 - HTML, CSS e JavaScript sem build, hospedados no GitHub Pages;
@@ -35,3 +37,7 @@ Em **Vendas → Registrar venda**, o vendedor informa a bateria, o preço real, 
 ## Notificações
 
 A cada venda registrada, Sandro recebe um aviso; ao confirmar um acerto, Wanderson recebe a confirmação. Sandro pode enviar lembrete manual pela aba **Acertos → Cobrar WS**. Existe um resumo automático de pendências às **09h (Brasília)**, apenas quando há acertos em aberto. O sininho guarda os avisos mesmo que o Push seja bloqueado. Para recebê-los na tela bloqueada, cada usuário deve ativar Push no próprio celular.
+
+## Lançamentos retroativos
+
+Em **Vendas → Lançar venda antiga**, use a data/hora real do negócio e informe também se o repasse à Power já foi pago e quando. Em **Despesas → Gasto antigo**, informe a data real, o horário quando conhecido e o valor. As datas de cadastro e os responsáveis permanecem separados no banco para auditoria. O módulo de despesas é exclusivo da WS Baterias; gastos próprios da Power devem ter controles separados.
