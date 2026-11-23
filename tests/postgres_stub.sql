@@ -7,9 +7,9 @@ create table auth.identities (user_id uuid not null, provider text not null);
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
-create function auth.role() returns text language sql stable as $
+create function auth.role() returns text language sql stable as $auth_role$
   select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),current_user);
-$;
+$auth_role$;
 grant usage on schema public, auth to authenticated;
 grant execute on function auth.uid() to authenticated;
 insert into auth.users values
