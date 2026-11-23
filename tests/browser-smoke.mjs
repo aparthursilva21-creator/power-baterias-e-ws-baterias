@@ -29,7 +29,9 @@ const browser=await chromium.launch({executablePath:exe,headless:true,args:['--n
 const failures=[];
 async function scenario(width,height,userRole='admin'){
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:width<600?2:1,isMobile:width<600,hasTouch:width<600});
-  page.on('pageerror',err=>failures.push('JS '+width+': '+err.message));
+  page.on('pageerror',err=>{failures.push('JS '+width+': '+err.message);console.error('BROWSER SCRIPT ERROR '+width,err.stack||err.message);});
+  page.on('console',msg=>{if(msg.type()==='error')console.error('BROWSER CONSOLE '+width,msg.text());});
+  page.on('requestfailed',req=>{if(req.url().includes('ws-receipt'))console.error('RECEIPT RESOURCE ERROR',req.url(),req.failure()?.errorText);});
   await page.route('**/auth.js*',route=>route.fulfill({status:200,contentType:'text/javascript',body:''}));
   await page.route('https://fonts.googleapis.com/**',route=>route.abort());
   await page.route('https://fonts.gstatic.com/**',route=>route.abort());
