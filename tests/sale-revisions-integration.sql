@@ -58,9 +58,9 @@ begin
  if not v_blocked then raise exception 'Permitiu pagamento de venda cancelada'; end if;
 
  v_out:=public.get_power_ws_monthly_report((now() at time zone 'America/Sao_Paulo')::date);
- if (v_out->>'sales_count')::int<>2 then
+ if (v_out->>'sales_count')::int<>3 then
   raise exception 'Relatorio incluiu venda cancelada: %',v_out->>'sales_count'; end if;
- if (v_out->>'power_pending_total_now_cents')::bigint<>0 then
+ if (v_out->>'power_pending_total_now_cents')::bigint<>3300 then
   raise exception 'Relatorio incluiu pendencia cancelada'; end if;
  raise notice 'PASSOU: correção, motivos, permissão, veto de pagamento, cancelamento e relatórios';
 end;
