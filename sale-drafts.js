@@ -1,5 +1,5 @@
 /* Power × WS — Rascunho privado de venda no Supabase (nunca é uma venda confirmada).
- * Sem localStorage/sessionStorage para dados de clientes ou valores financeiros.
+ * Dados não confirmados ficam somente na memória da tela e no banco protegido.
  */
 export const SALE_DRAFT_MINUTES = 30;
 const ALLOWED_MODES = new Set(['sale','historical_sale']);
