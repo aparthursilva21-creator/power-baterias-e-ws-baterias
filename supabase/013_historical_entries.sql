@@ -6,6 +6,7 @@ alter table public.used_battery_sales
   add column if not exists recorded_at timestamptz not null default now(),
   add column if not exists is_historical boolean not null default false;
 update public.used_battery_sales set recorded_by=sold_by where recorded_by is null;
+alter table public.used_battery_sales alter column recorded_by set default auth.uid();
 alter table public.used_battery_sales alter column recorded_by set not null;
 
 alter table public.used_settlement_events
@@ -219,7 +220,7 @@ begin
   end if;
   v_id:=public.register_ws_expense(p_category,p_amount_cents,p_spent_on,p_description);
   update public.ws_expenses set
-    is_historical=p_spent_on<(now() at time zone 'America/Sao_Paulo')::date,
+    is_historical=true,
     spent_at=v_spent_at where id=v_id;
   return v_id;
 end;
