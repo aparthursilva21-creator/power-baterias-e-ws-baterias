@@ -14,6 +14,8 @@ Sistema privado de **lançamento direto de vendas de baterias usadas**, garantia
 
 **[Continuar uma venda após consultar o WhatsApp, sem perder os campos](docs/CONTINUIDADE_WHATSAPP.md)**
 
+**[Alterar data e hora de venda com registro de quem corrigiu](docs/DATA_HORA_VENDAS.md)**
+
 ## Arquitetura
 
 - HTML, CSS e JavaScript sem build, hospedados no GitHub Pages;
