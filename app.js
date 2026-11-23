@@ -19,7 +19,7 @@ const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Tran
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
 if(!MENU.some(x=>x[0]===current))current='dashboard';
-let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [] };
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let liveChannel=null;let liveRefreshDebounce=null;
@@ -160,7 +160,7 @@ window.addEventListener('pbws:go-section',e=>{
 
 window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
-  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[]};
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
   if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
@@ -180,6 +180,7 @@ async function loadAll(silent=false) {
     ['batchItems',api.from('used_settlement_batch_items').select('*')],
     ['events',api.from('used_settlement_events').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['activity',api.from('used_battery_activity').select('*').order('occurred_at',{ascending:false}).limit(500)],
+    ['saleRevisions',api.from('used_sale_revisions').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['staff',api.rpc('get_power_ws_team')]
   ];
   if(canExpense()) requests.push(
@@ -191,6 +192,10 @@ async function loadAll(silent=false) {
     const failed=resolved.find(x=>x.error);
     if(failed) throw new Error(failed.key+': '+explain(failed.error));
     for(const x of resolved)rows[x.key]=x.data || [];
+    // Vendas canceladas ficam preservadas no banco e na auditoria, mas nao contam na operacao.
+    rows.sales=rows.sales.filter(s=>!s.cancelled_at);
+    const activeSales=new Set(rows.sales.map(s=>s.id));
+    rows.settlements=rows.settlements.filter(s=>activeSales.has(s.sale_id));
     selectedSettle=new Set([...selectedSettle].filter(id=>rows.settlements.some(s=>s.id===id && remaining(s)>0)));
     if(!canExpense()){rows.expenses=[];rows.expenseEvents=[];}
     ready=true;
@@ -231,10 +236,13 @@ function dashboardView() {
 function salesView(){
  const content=rows.sales.map(s=>{
  const b=battery(s.battery_id),st=settleFor(s.battery_id),sts=settlingStatus(st);
- return '<tr><td><strong>'+stamp(s.sold_at)+'</strong><div class="cell-sub">Por '+esc(staffName(s.sold_by))+'</div></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td></tr>';
+ const actions=canSell()&&(role==='admin'||s.sold_by===user?.id)?
+    '<div class="row-actions"><button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>'+
+    (role==='admin'?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Cancelar</button>':'')+'</div>':'—';
+ return '<tr><td><strong>'+stamp(s.sold_at)+'</strong><div class="cell-sub">Por '+esc(staffName(s.sold_by))+'</div></td><td>'+esc(b?.code||shortId(s.battery_id))+'<div class="cell-sub">'+esc(b?.brand||'')+' '+esc(b?.model||'')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
  }).join('');
  return heading('Vendas','Cada venda tem cliente, bateria, valor, data, horário e responsável.',canSell()?button('+ Registrar venda','new-sale'):'')+
- panel('Histórico de vendas',tbl(['Quando / Vendedor','Bateria','Cliente','Venda','Garantia','Acerto'],content));
+ panel('Histórico de vendas',tbl(['Quando / Vendedor','Bateria','Cliente','Venda','Garantia','Acerto','Ações'],content));
 }
 function settlementView() {
  const pending=rows.settlements.filter(x=>remaining(x)>0);
@@ -302,6 +310,11 @@ function warrantyView(){
 }
 function activityView(){
  const events=[
+  ...rows.saleRevisions.map(x=>({
+    at:x.occurred_at,who:x.actor_id,category:'Venda',
+    description:x.action==='cancelled'?'Venda cancelada':'Venda corrigida',
+    detail:x.reason+' · '+(x.action==='cancelled'?'Registro preservado para auditoria':'Valores anteriores e novos armazenados no banco')
+  })),
   ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:x.reason+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
   ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:x.description||''})),
   ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa',description:x.action==='created'?'Cadastrada':'Corrigida',detail:x.reason+' · '+brl(x.new_amount_cents)}))
@@ -328,6 +341,8 @@ document.addEventListener('click',async e=>{
  try {
   if(act==='refresh')await loadAll(true);
   if(act==='new-sale')openSale();
+  if(act==='edit-sale')openEditSale(rows.sales.find(s=>s.id===btn.dataset.id));
+  if(act==='cancel-sale')openCancelSale(rows.sales.find(s=>s.id===btn.dataset.id));
   if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
   if(act==='batch-settle')openBatch();
   if(act==='remind-ws')await remindWS();
@@ -388,6 +403,67 @@ function openSale(){
   } catch(err) {toast(explain(err),'error');}
  });
 }
+function openEditSale(s){
+ if(!s||!canSell()||(role!=='admin'&&s.sold_by!==user?.id))
+  return toast('Você não tem permissão para corrigir essa venda.','error');
+ const b=battery(s.battery_id);
+ if(!b)return toast('Dados da bateria não encontrados.','error');
+ const body='<div class="note">Corrigir a venda '+esc(b.code)+'. A data e o responsável originais não serão alterados. O repasse ao Sandro deve ser ajustado na aba Acertos.</div>'+
+ '<form id="edit-sale-form" class="field-grid" style="margin-top:16px">'+
+ field('Marca','brand','text',b.brand,'maxlength="100" required')+
+ field('Modelo','model','text',b.model,'maxlength="120" required')+
+ field('Amperagem (Ah)','amperage','number',b.amperage_ah||'','min="1" max="500" step="1"')+
+ field('Número de série','serial','text',b.serial_number||'','maxlength="120"')+
+ field('Valor da venda (R$)','price','number',fromCents(s.sale_price_cents),'min="0.01" step="0.01" required')+
+ field('Custo de recuperação (R$)','recovery','number',fromCents(b.recovery_cost_cents),'min="0" step="0.01" required')+
+ field('Cliente','customer','text',s.customer_name,'maxlength="160" required')+
+ field('Telefone','phone','tel',s.customer_phone||'','maxlength="30"')+
+ field('Placa','plate','text',s.vehicle_plate||'','maxlength="15"')+
+ selectField('Pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],s.payment_method)+
+ field('Garantia (dias)','warranty','number',s.warranty_days,'min="0" max="365" required')+
+ '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200">'+esc(s.notes||'')+'</textarea></label>'+
+ '<label class="field wide"><span>Motivo da correção (obrigatório)</span><textarea name="reason" minlength="5" maxlength="500" required placeholder="Ex.: valor digitado errado no lançamento"></textarea></label>'+
+ '</form>';
+ modal('Corrigir venda',body,'<button class="btn secondary" data-modal-close type="button">Voltar</button><button class="btn" form="edit-sale-form" type="submit">Salvar correção</button>');
+ $('#edit-sale-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  try{
+   const d=Object.fromEntries(new FormData(e.currentTarget));
+   if(d.reason.trim().length<5)throw Error('Informe um motivo com pelo menos 5 caracteres.');
+   const patch={
+    brand:d.brand,model:d.model,amperage_ah:d.amperage?Number(d.amperage):null,
+    serial_number:d.serial,customer_name:d.customer,customer_phone:d.phone,
+    vehicle_plate:d.plate,sale_price_cents:cents(d.price),
+    recovery_cost_cents:cents(d.recovery),payment_method:d.method,
+    warranty_days:Number(d.warranty),notes:d.notes
+   };
+   void runRpc('correct_used_battery_sale',{
+    p_sale_id:s.id,p_patch:patch,p_reason:d.reason.trim()
+   },'Correção salva com data, hora e responsável no histórico.');
+  }catch(err){toast(explain(err),'error');}
+ });
+}
+function openCancelSale(s){
+ if(!s||role!=='admin')return toast('Somente administrador pode cancelar vendas.','error');
+ const b=battery(s.battery_id),st=settleFor(s.battery_id);
+ const paid=Number(st?.paid_cents||0)+Number(st?.waived_cents||0);
+ const warning=paid>0?'<div class="note warn" style="margin-bottom:14px">Existe pagamento ou dispensa associado. O sistema não permitirá cancelar até a situação financeira ser corrigida e conciliada.</div>':'';
+ const body=warning+'<div class="note error"><b>Cancelamento administrativo</b><br>Venda '+esc(b?.code||shortId(s.id))+' de '+brl(s.sale_price_cents)+'. Depois de cancelada, sairá do painel e dos relatórios, mas ficará guardada no histórico. Nenhum dinheiro será estornado automaticamente.</div>'+
+ '<form id="cancel-sale-form" class="field-grid" style="margin-top:18px">'+
+ '<label class="field wide"><span>Motivo obrigatório</span><textarea name="reason" maxlength="500" minlength="5" required placeholder="Ex.: lançamento fictício ou duplicado"></textarea></label>'+
+ field('Digite CANCELAR para confirmar','confirm','text','','required autocomplete="off" class="wide"')+'</form>';
+ modal('Cancelar venda',body,'<button class="btn secondary" type="button" data-modal-close>Voltar</button><button class="btn danger" type="submit" form="cancel-sale-form">Cancelar lançamento</button>');
+ $('#cancel-sale-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  const d=Object.fromEntries(new FormData(e.currentTarget));
+  if(d.confirm.trim()!=='CANCELAR')return toast('Digite CANCELAR exatamente para confirmar.','error');
+  if(d.reason.trim().length<5)return toast('Descreva o motivo.','error');
+  void runRpc('cancel_used_battery_sale',{
+   p_sale_id:s.id,p_reason:d.reason.trim()
+  },'Venda cancelada e removida dos totais; histórico preservado.');
+ });
+}
+
 function openSettlement(s) {
  if(!canPay())return toast('Somente Sandro ou administrador podem gerenciar acertos.','error');
  if(!s)return;
