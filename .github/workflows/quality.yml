@@ -20,6 +20,8 @@ jobs:
         run: node --check auth.js
       - name: Conferir sintaxe das telas
         run: node --check app.js
+      - name: Conferir sintaxe da central Push
+        run: node --check notifications.js && node --check sw.js
       - name: Executar testes de estrutura
         run: node --test tests/smoke.test.mjs
 
@@ -53,8 +55,14 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/setup-auth.sql
       - name: Instalar todas as migrações com o mesmo arquivo usado pela loja
         run: psql -v ON_ERROR_STOP=1 -f supabase/INSTALAR_FINAL.sql
+      - name: Preparar Vault de laboratorio
+        run: psql -v ON_ERROR_STOP=1 -f tests/vault_stub.sql
+      - name: Instalar central de notificacoes
+        run: psql -v ON_ERROR_STOP=1 -f supabase/007_notifications.sql
       - name: Testar fluxo empresarial
         run: psql -v ON_ERROR_STOP=1 -f tests/integration.sql
+      - name: Testar avisos, lembretes e privacidade
+        run: psql -v ON_ERROR_STOP=1 -f tests/notification-integration.sql
 
   browser:
     name: Navegador real no celular e no PC
