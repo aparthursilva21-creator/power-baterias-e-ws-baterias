@@ -22,6 +22,8 @@ jobs:
         run: node --check app.js
       - name: Conferir sintaxe da central Push
         run: node --check notifications.js && node --check sw.js
+      - name: Conferir sintaxe do comprovante WS
+        run: node --check ws-receipt.js
       - name: Executar testes de estrutura
         run: node --test tests/smoke.test.mjs
 
