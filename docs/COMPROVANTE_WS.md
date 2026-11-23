@@ -46,3 +46,9 @@ O comprovante é construído com os dados reais da venda consultados pelo aplica
 - `tests/browser-smoke.mjs`: validação Chrome mobile e desktop, arquivo PDF e observações extensas
 
 Nenhuma migração adicional no Supabase é necessária. A funcionalidade usa os dados das vendas WS já existentes.
+
+## Atualização: nome da bateria em destaque
+
+O cliente não vê códigos de estoque como `WS-000001`, UUIDs ou referências internas. O comprovante segue uma apresentação comercial inspirada em comprovantes de loja: cabeçalho azul WS, dados do comprador, **produto vendido com marca/modelo/amperagem destacados**, linha de itens (quantidade, valor unitário e total), pagamento, garantia e observações. O **PDF e o nome do arquivo** também identificam a bateria pelo nome, nunca pelo código interno. As telas de vendas, acertos, garantias, relatórios e histórico foram alinhadas ao mesmo padrão.
+
+O documento permanece **não fiscal**: este design não representa NFC-e ou NF-e emitida pela SEFAZ.
