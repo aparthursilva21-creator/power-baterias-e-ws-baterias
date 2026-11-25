@@ -91,6 +91,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/017_draft_expiry_cleanup.sql
       - name: Testar privacidade e prazo dos rascunhos
         run: psql -v ON_ERROR_STOP=1 -f tests/sale-drafts-integration.sql
+      - name: Habilitar cancelamento WS e Power com relatorios por periodo
+        run: psql -v ON_ERROR_STOP=1 -f supabase/019_cancel_and_period_reports.sql
+      - name: Testar exclusao auditada e relatorios diario mensal anual
+        run: psql -v ON_ERROR_STOP=1 -f tests/cancel-period-integration.sql
 
   browser:
     name: Navegador real no celular e no PC
