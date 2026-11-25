@@ -69,6 +69,7 @@ const dateBR = s => s ? (/^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? String(s).slice
 const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
 const canSell = () => role === 'ws' || role === 'admin';
 const canBackdateSale = () => ['ws','power','admin'].includes(role);
+const canCancelSale = s => !!s && !s.cancelled_at && ['ws','power','admin'].includes(role);
 const canEditSale = s => !!s && (
  role==='admin' || (role==='ws'&&s.sold_by===user?.id) ||
  (role==='power'&&s.is_historical&&s.recorded_by===user?.id)
@@ -428,10 +429,11 @@ function salesView(){
    r.before_data.sale.sold_at!==r.after_data.sale.sold_at);
  const receiptButton=canMakeWSReceipt(s)?
     '<button type="button" class="btn tiny ws-receipt-button" data-act="ws-receipt" data-id="'+s.id+'">▤ Notinha WS</button>':'';
- const actions=canEditSale(s)?
-    '<div class="row-actions"><button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>'+
-    (role==='admin'?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Cancelar</button>':'')+'</div>':'—';
- const allActions='<div class="row-actions">'+receiptButton+(actions==='—'?'':actions)+'</div>';
+ const actions='<div class="row-actions">'+
+  (canEditSale(s)?'<button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>':'')+
+  (canCancelSale(s)?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Excluir venda</button>':'')+
+  '</div>';
+ const allActions='<div class="row-actions">'+receiptButton+actions+'</div>';
  return '<tr><td><strong>'+stamp(s.sold_at)+'</strong>'+
  (s.is_historical?'<div style="margin-top:4px">'+statusBadge('Venda antiga','gray')+'</div>':'')+
  (dateRevision?'<div style="margin-top:4px">'+statusBadge('Data/hora corrigida','yellow')+'</div>':'')+
@@ -537,16 +539,20 @@ function warrantyView(){
 function activityView(){
  const events=[
   ...rows.saleRevisions.map(x=>{
+    const original=x.before_data?.sale||x.before_data||{};
     const oldDate=x.before_data?.sale?.sold_at;
     const newDate=x.after_data?.sale?.sold_at;
     const dateChanged=x.action==='corrected'&&oldDate&&newDate&&oldDate!==newDate;
-    const b=x.before_data?.battery||x.after_data?.battery;
+    const b=x.before_data?.battery||x.after_data?.battery||battery(original.battery_id);
     return {
       at:x.occurred_at,who:x.actor_id,category:'Venda',
       description:x.action==='cancelled'?'Venda cancelada':
         dateChanged?'Data e horário corrigidos':'Venda corrigida',
       detail:(b?batteryDisplay(b)+' · ':'')+
         (dateChanged?'ANTES: '+stamp(oldDate)+' → DEPOIS: '+stamp(newDate)+' · ':'')+
+        (x.action==='cancelled'?'Cliente: '+(original.customer_name||'—')+
+          ' · Valor: '+brl(original.sale_price_cents)+
+          ' · Venda: '+stamp(original.sold_at)+' · ':'')+
         'Motivo: '+hideInternalBatteryCodes(x.reason)+
         (x.action==='cancelled'?' · Registro preservado para auditoria':'')
     };
@@ -772,15 +778,15 @@ function openEditSale(s){
  });
 }
 function openCancelSale(s){
- if(!s||role!=='admin')return toast('Somente administrador pode cancelar vendas.','error');
+ if(!canCancelSale(s))return toast('Sua conta não pode excluir esta venda.','error');
  const b=battery(s.battery_id),st=settleFor(s.battery_id);
  const paid=Number(st?.paid_cents||0)+Number(st?.waived_cents||0);
  const warning=paid>0?'<div class="note warn" style="margin-bottom:14px">Existe pagamento ou dispensa associado. O sistema não permitirá cancelar até a situação financeira ser corrigida e conciliada.</div>':'';
- const body=warning+'<div class="note error"><b>Cancelamento administrativo</b><br>Venda de '+esc(batteryDisplay(b))+' no valor de '+brl(s.sale_price_cents)+'. Depois de cancelada, sairá do painel e dos relatórios, mas ficará guardada no histórico. Nenhum dinheiro será estornado automaticamente.</div>'+
+ const body=warning+'<div class="note error"><b>Exclusão com histórico permanente</b><br>Venda de '+esc(batteryDisplay(b))+' no valor de '+brl(s.sale_price_cents)+'. Depois de cancelada, sairá do painel e dos relatórios, mas ficará guardada no histórico. Nenhum dinheiro será estornado automaticamente.</div>'+
  '<form id="cancel-sale-form" class="field-grid" style="margin-top:18px">'+
  '<label class="field wide"><span>Motivo obrigatório</span><textarea name="reason" maxlength="500" minlength="5" required placeholder="Ex.: lançamento fictício ou duplicado"></textarea></label>'+
  field('Digite CANCELAR para confirmar','confirm','text','','required autocomplete="off" class="wide"')+'</form>';
- modal('Cancelar venda',body,'<button class="btn secondary" type="button" data-modal-close>Voltar</button><button class="btn danger" type="submit" form="cancel-sale-form">Cancelar lançamento</button>');
+ modal('Excluir venda',body,'<button class="btn secondary" type="button" data-modal-close>Voltar</button><button class="btn danger" type="submit" form="cancel-sale-form">Cancelar lançamento</button>');
  $('#cancel-sale-form').addEventListener('submit',e=>{
   e.preventDefault();
   const d=Object.fromEntries(new FormData(e.currentTarget));
