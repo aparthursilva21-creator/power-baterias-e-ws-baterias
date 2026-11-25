@@ -712,13 +712,15 @@ document.addEventListener('change',e=>{
  }
  if(e.target.id==='report-type'){
    reportMode=e.target.value;report=null;reportSelection=null;
-   render();void fetchReport();
+   // Nao substituir o input enquanto o navegador finaliza o evento blur/change.
+   setTimeout(()=>{if(current==='reports'){render();void fetchReport();}},0);
  }
  if(['report-day','report-month','report-year'].includes(e.target.id)){
    if(e.target.id==='report-day')reportDay=e.target.value;
    if(e.target.id==='report-month')reportMonth=e.target.value;
    if(e.target.id==='report-year')reportYear=e.target.value;
-   report=null;reportSelection=null;render();void fetchReport();
+   report=null;reportSelection=null;
+   setTimeout(()=>{if(current==='reports'){render();void fetchReport();}},0);
  }
 });
 function openSale(historical=false,restored=null){
