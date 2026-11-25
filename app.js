@@ -1,5 +1,6 @@
 import {receiptHTML,downloadReceipt,shareReceipt,soldBatteryName} from './ws-receipt.js?v=3';
 import {SaleDraftStore,SALE_DRAFT_MINUTES} from './sale-drafts.js?v=1';
+import {downloadPeriodPDF} from './report-pdf.js?v=1';
 
 /* Power Baterias × WS Baterias
    Operação remota: Supabase Auth + RLS + funções SQL transacionais.
@@ -53,6 +54,44 @@ function brazilInputDateTime(value){
  return dayKey(value)+'T'+v('hour')+':'+v('minute');
 }
 let reportMonth = monthKey(new Date());
+let reportDay = dayKey(new Date());
+let reportYear = dayKey(new Date()).slice(0,4);
+let reportMode = 'month';
+let reportSelection = null;
+function utcPlusDay(value,n=1){
+ const d=new Date(value+'T00:00:00Z');
+ if(!Number.isFinite(d.getTime()))throw Error('Data inválida');
+ d.setUTCDate(d.getUTCDate()+n);
+ return d.toISOString().slice(0,10);
+}
+function reportWindow(){
+ let start,end,title;
+ if(reportMode==='day'){
+  if(!/^\d{4}-\d\d-\d\d$/.test(reportDay))throw Error('Informe um dia válido.');
+  start=reportDay;end=utcPlusDay(start);
+  title='Diário · '+dateBR(start);
+ }else if(reportMode==='month'){
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(reportMonth))throw Error('Informe um mês válido.');
+  start=reportMonth+'-01';end=utcPlusDay(start,32).slice(0,7)+'-01';
+  const [year,month]=reportMonth.split('-').map(Number);
+  title='Mensal · '+new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'})
+   .format(new Date(Date.UTC(year,month-1,1)));
+ }else{
+  if(!/^\d{4}$/.test(reportYear)||Number(reportYear)<2000||Number(reportYear)>2100)
+   throw Error('Informe um ano válido entre 2000 e 2100.');
+  start=reportYear+'-01-01';end=(Number(reportYear)+1)+'-01-01';
+  title='Anual · '+reportYear;
+ }
+ if(utcPlusDay(start,0)!==start)throw Error('Data inválida.');
+ return {start,endExclusive:end,endInclusive:utcPlusDay(end,-1),title,type:reportMode};
+}
+function salesInPeriod(period){
+ return rows.sales.filter(x=>{const day=dayKey(x.sold_at);
+  return day>=period.start&&day<period.endExclusive;});
+}
+function expensesInPeriod(source,period){
+ return source.filter(x=>x.spent_on>=period.start&&x.spent_on<period.endExclusive);
+}
 const cents = value => {
   const s = String(value ?? '').trim().replace(',', '.');
   if (!/^\d+(?:\.\d{1,2})?$/.test(s)) throw new Error('Informe um valor válido com no máximo duas casas decimais.');
@@ -496,33 +535,67 @@ function expenseView(){
   'Para evitar duplicidade no lucro da WS, não registre como despesa geral um custo já incluído na recuperação da bateria.')+
  '</div>';
 }
-function reportView() {
- return heading('Relatórios','Fechamento mensal da parceria, atualizado diretamente do banco de dados.',button('↻ Atualizar relatório','fetch-report','secondary'))+
- '<div class="panel"><div class="panel-body filter-row">'+field('Mês de referência','month','month',reportMonth,'id="report-month"')+
- '<button class="btn" type="button" data-act="fetch-report">Consultar mês</button><button class="btn secondary" type="button" data-act="export-csv">Exportar vendas CSV</button></div></div>'+
- '<div id="monthly-report">'+(report?reportSummary(report):'<div class="loading"><span class="loader"></span> Selecione o mês para visualizar os indicadores.</div>')+'</div>'+
- panel('Todas as vendas do mês',tbl(['Data / Hora','Bateria','Cliente','Valor de venda','Repasse','Situação'],rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth).map(s=>{const st=settleFor(s.battery_id);const b=battery(s.battery_id);const x=settlingStatus(st);return '<tr><td>'+stamp(s.sold_at)+'</td><td>'+esc(batteryDisplay(b))+'</td><td>'+esc(s.customer_name)+'</td><td>'+brl(s.sale_price_cents)+'</td><td>'+brl(st?.owed_cents||0)+'</td><td>'+statusBadge(x[0],x[1])+'</td></tr>';}).join('')));
+function reportView(){
+ let period;try{period=reportWindow();}catch{return heading('Relatórios','Selecione uma data válida.');}
+ const mode=selectField('Tipo de relatório','report_type',
+  [['day','Diário'],['month','Mensal'],['year','Anual']],reportMode,'id="report-type"');
+ const picker=reportMode==='day'
+  ?field('Dia do relatório','report_day','date',reportDay,'id="report-day"')
+  :reportMode==='month'
+    ?field('Mês do relatório','report_month','month',reportMonth,'id="report-month"')
+    :field('Ano do relatório','report_year','number',reportYear,
+      'id="report-year" min="2000" max="2100" step="1"');
+ const options='<div class="btn-row">'+button('Consultar período','fetch-report')+
+  button('Baixar PDF','download-report-pdf','secondary')+
+  button('Exportar vendas CSV','export-csv','secondary')+'</div>';
+ const sales=salesInPeriod(period);
+ const detail=sales.map(s=>{
+  const st=settleFor(s.battery_id),status=settlingStatus(st);
+  return '<tr><td>'+stamp(s.sold_at)+'</td><td>'+esc(batteryDisplay(battery(s.battery_id)))+
+   '</td><td>'+esc(s.customer_name)+'</td><td>'+brl(s.sale_price_cents)+
+   '</td><td>'+brl(st?.owed_cents||0)+'</td><td>'+statusBadge(status[0],status[1])+'</td></tr>';
+ }).join('');
+ return heading('Relatórios','Relatórios por dia, mês e ano, com PDF para baixar.',
+  button('↻ Atualizar','fetch-report','secondary'))+
+ '<div class="panel"><div class="panel-body"><div class="field-grid">'+mode+picker+
+ '</div><div style="margin-top:14px">'+options+'</div></div></div>'+
+ '<div id="monthly-report">'+(report&&reportSelection?.start===period.start&&
+ reportSelection?.endExclusive===period.endExclusive?
+ reportSummary(report,period):
+ '<div class="loading"><span class="loader"></span> Consultando dados do período...</div>')+'</div>'+
+ panel('Vendas de '+esc(period.title),
+  tbl(['Data / Hora','Bateria','Cliente','Venda','Repasse','Situação'],detail))+
+ '<div class="note">As datas seguem o fuso de Brasília. Vendas canceladas saem dos totais. '+
+ 'O saldo pendente atual é geral, não limitado ao período selecionado.</div>';
 }
 function stampMonth(input){return monthKey(input);}
-function reportSummary(r){
+function reportSummary(r,period=reportWindow()){
  const showWS=role==='ws'||role==='admin';
+ const suffix=period.type==='day'?'do dia':period.type==='year'?'do ano':'do mês';
  const stats=role==='power'?[
-  stat('Vendas WS no mês',String(r.sales_count)),stat('Faturamento WS',brl(r.sales_revenue_cents)),
-  stat('Recebido pela Power no mês',brl(r.power_received_in_month_cents),true),stat('Saldo pendente atual',brl(r.power_pending_total_now_cents),true)
+  stat('Vendas WS '+suffix,String(r.sales_count)),stat('Faturamento WS',brl(r.sales_revenue_cents)),
+  stat('Recebido pela Power '+suffix,brl(r.power_received_in_month_cents),true),
+  stat('Saldo pendente total atual',brl(r.power_pending_total_now_cents),true)
  ]:[
-  stat('Vendas realizadas',String(r.sales_count)),stat('Faturamento do mês',brl(r.sales_revenue_cents)),
-  stat('Lucro estimado WS',brl(r.ws_estimated_profit_cents),true),stat('Gastos operacionais WS',brl(r.ws_expenses_cents))
+  stat('Vendas realizadas '+suffix,String(r.sales_count)),
+  stat('Faturamento do período',brl(r.sales_revenue_cents)),
+  stat('Lucro estimado WS',brl(r.ws_estimated_profit_cents),true),
+  stat('Despesas WS do período',brl(r.ws_expenses_cents))
  ];
  return '<div class="stat-grid">'+stats.join('')+'</div>'+
- '<div class="panel"><div class="panel-top"><h3 class="panel-title">Resumo de '+esc(r.month)+'</h3></div><div class="panel-body lined-list">'+
-  line('Total devido à Power pelas vendas do mês',brl(r.power_repasse_sales_month_cents))+
-  line('Valores pagos à Power neste mês',brl(r.power_received_in_month_cents))+
-  line('Baterias deste mês com acerto encerrado',String(r.fully_settled_sales_in_month))+
-  (showWS ? line('Custos de recuperação em baterias vendidas',brl(r.recovery_cost_sales_month_cents))+line('Despesas WS lançadas no mês',brl(r.ws_expenses_cents))+
-  line('Lucro estimado WS (não contábil)',brl(r.ws_estimated_profit_cents)) : '')+
-  ((role==='power'||role==='admin')?line('Despesas próprias da Power no mês',brl(r.power_expenses_cents)):'')+
+ '<div class="panel"><div class="panel-top"><h3 class="panel-title">'+esc(period.title)+'</h3></div>'+
+ '<div class="panel-body lined-list">'+
+ line('Total devido à Power por vendas no período',brl(r.power_repasse_sales_month_cents))+
+ line('Pagamentos recebidos pela Power no período',brl(r.power_received_in_month_cents))+
+ line('Vendas do período com acerto encerrado',String(r.fully_settled_sales_in_month))+
+ (showWS?line('Recuperação de baterias vendidas no período',brl(r.recovery_cost_sales_month_cents))+
+ line('Despesas da WS no período',brl(r.ws_expenses_cents))+
+ line('Lucro estimado WS (não contábil)',brl(r.ws_estimated_profit_cents)):'')+
+ ((role==='power'||role==='admin')?line('Despesas próprias da Power no período',brl(r.power_expenses_cents)):'')+
  '</div></div>'+
- '<div class="note">Lucro estimado = vendas − repasses à Power − custos de recuperação − despesas WS. Esse indicador é operacional, não um demonstrativo contábil ou fiscal. Recebimentos são agrupados pela data efetiva do acerto; vendas pela data de venda.</div>';
+ '<div class="note">Lucro estimado = vendas − repasse − custos de recuperação − despesas WS. '+
+ 'Esse indicador é operacional e não equivale a um demonstrativo contábil ou fiscal. '+
+ 'Pagamentos são agrupados pela data efetiva do acerto, e as vendas pela data de realização.</div>';
 }
 function line(label,value){return '<div class="list-entry"><span class="muted mini">'+esc(label)+'</span><strong>'+esc(value)+'</strong></div>';}
 function warrantyView(){
@@ -629,6 +702,7 @@ document.addEventListener('click',async e=>{
   if(act==='edit-expense')openExpense((expenseBranch==='power'?rows.powerExpenses:rows.expenses).find(x=>x.id===btn.dataset.id));
   if(act==='fetch-report')await fetchReport();
   if(act==='export-csv')exportSales();
+  if(act==='download-report-pdf')await exportReportPDF();
  }catch(err){toast(explain(err),'error');}
 });
 document.addEventListener('change',e=>{
@@ -636,8 +710,15 @@ document.addEventListener('change',e=>{
   const id=e.target.dataset.selectSettle;
   if(e.target.checked)selectedSettle.add(id);else selectedSettle.delete(id);
  }
- if(e.target.id==='report-month'){
-  reportMonth=e.target.value;report=null;render();void fetchReport();
+ if(e.target.id==='report-type'){
+   reportMode=e.target.value;report=null;reportSelection=null;
+   render();void fetchReport();
+ }
+ if(['report-day','report-month','report-year'].includes(e.target.id)){
+   if(e.target.id==='report-day')reportDay=e.target.value;
+   if(e.target.id==='report-month')reportMonth=e.target.value;
+   if(e.target.id==='report-year')reportYear=e.target.value;
+   report=null;reportSelection=null;render();void fetchReport();
  }
 });
 function openSale(historical=false,restored=null){
@@ -967,29 +1048,65 @@ function openExpense(x=null,historical=false){
 }
 async function fetchReport(){
  if(!api||!ready)return;
- const month=$('#report-month')?.value||reportMonth;
- if(!/^\d{4}-\d{2}$/.test(month))return toast('Escolha um mês válido.','error');
- reportMonth=month;const slot=$('#monthly-report');
- if(slot)slot.innerHTML='<div class="loading"><span class="loader"></span> Calculando indicadores...</div>';
+ let period;try{period=reportWindow();}catch(err){return toast(explain(err),'error');}
+ const slot=$('#monthly-report');
+ if(slot)slot.innerHTML='<div class="loading"><span class="loader"></span> Consultando relatório...</div>';
  try{
-  const {data,error}=await api.rpc('get_power_ws_monthly_report',{p_month:month+'-01'});
+  const {data,error}=await api.rpc('get_power_ws_period_report',{
+    p_start:period.start,p_end:period.endExclusive
+  });
   if(error)throw error;
-  if(current!=='reports')return;
-  report=data;
-  const here=$('#monthly-report');if(here)here.innerHTML=reportSummary(data);
- }catch(err){if(slot)slot.innerHTML='<div class="note error">'+esc(explain(err))+'</div>';toast(explain(err),'error');}
+  const active=reportWindow();
+  if(current!=='reports'||active.start!==period.start||active.endExclusive!==period.endExclusive)return;
+  report=data;reportSelection=period;render();
+ }catch(err){
+  if(slot)slot.innerHTML='<div class="note error">'+esc(explain(err))+'</div>';
+  toast(explain(err),'error');
+ }
+}
+async function exportReportPDF(){
+ if(!report||!reportSelection)return toast('Consulte primeiro o período desejado.','error');
+ const period=reportWindow();
+ if(period.start!==reportSelection.start||period.endExclusive!==reportSelection.endExclusive)
+  return toast('Consulte novamente o período antes de baixar.','error');
+ const sales=salesInPeriod(period).map(s=>({
+  date:stamp(s.sold_at),product:batteryDisplay(battery(s.battery_id)),
+  customer:s.customer_name,amount_cents:s.sale_price_cents
+ }));
+ const expense=x=>({
+  date:dateBR(x.spent_on),category:CATEGORIES[x.category]||x.category,
+  description:x.description,amount_cents:x.amount_cents
+ });
+ try{
+  const file=await downloadPeriodPDF({
+   ...period,summary:report,role,sales,
+   wsExpenses:canViewWSExpenses()?expensesInPeriod(rows.expenses,period).map(expense):[],
+   powerExpenses:canViewPowerExpenses()?expensesInPeriod(rows.powerExpenses,period).map(expense):[]
+  });
+  toast('Relatório PDF salvo: '+file);
+ }catch(err){toast('Não foi possível gerar o PDF: '+explain(err),'error');}
 }
 function exportSales(){
- const rs=rows.sales.filter(s=>stampMonth(s.sold_at)===reportMonth);
- if(!rs.length)return toast('Não há vendas para exportar neste mês.','error');
- const csvSafe=x=>{const s=String(x??'');return '"'+( /^[=+\-@\t\r]/.test(s)?"'"+s:s).replace(/"/g,'""')+'"';};
+ if(!report||!reportSelection)return toast('Consulte primeiro o período desejado.','error');
+ const period=reportWindow(),rs=salesInPeriod(period);
+ if(period.start!==reportSelection.start||period.endExclusive!==reportSelection.endExclusive)
+  return toast('Consulte novamente o período antes de exportar.','error');
+ if(!rs.length)return toast('Não existem vendas para exportar neste período.','error');
+ const csvSafe=x=>{const s=String(x??'');return '"'+(/^[=+\-@\t\r]/.test(s)?"'"+s:s).replace(/"/g,'""')+'"';};
  const matrix=[['Venda em','Cadastro no sistema','Bateria vendida','Marca','Cliente','Telefone','Placa','Valor venda (R$)','Repasse Power (R$)','Valor pago (R$)','Saldo (R$)','Status','Vendedor','Garantia (dias)']];
  for(const s of rs){
-  const b=battery(s.battery_id), st=settleFor(s.battery_id),ss=settlingStatus(st);
-  matrix.push([stamp(s.sold_at),stamp(s.recorded_at||s.sold_at),batteryDisplay(b),b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),ss[0],staffName(s.sold_by),s.warranty_days]);
+  const b=battery(s.battery_id),st=settleFor(s.battery_id),status=settlingStatus(st);
+  matrix.push([stamp(s.sold_at),stamp(s.recorded_at||s.sold_at),
+   batteryDisplay(b),b?.brand||'',s.customer_name,s.customer_phone||'',s.vehicle_plate||'',
+   fromCents(s.sale_price_cents),fromCents(st?.owed_cents||0),
+   fromCents(st?.paid_cents||0),fromCents(st?remaining(st):0),
+   status[0],staffName(s.sold_by),s.warranty_days]);
  }
- const content='\uFEFF'+matrix.map(r=>r.map(csvSafe).join(';')).join('\r\n');
- const blob=new Blob([content],{type:'text/csv;charset=utf-8;'});
- const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='power-ws-vendas-'+reportMonth+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
- toast('Relatório CSV exportado. Proteja os dados dos clientes.');
+ const content='\uFEFF'+matrix.map(row=>row.map(csvSafe).join(';')).join('\r\n');
+ const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8;'}));
+ const a=document.createElement('a');a.href=url;
+ a.download='power-ws-vendas-'+period.type+'-'+period.start+'.csv';
+ document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),15000);
+ toast('CSV de vendas exportado.');
 }
