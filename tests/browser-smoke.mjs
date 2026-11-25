@@ -392,7 +392,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   ]);
   assert.match(monthlyPDF.suggestedFilename(),/Relatorio-month-/);
   const monthData=[];for await(const x of await monthlyPDF.createReadStream())monthData.push(x);
-  assert.match(Buffer.concat(monthData).subarray(0,8).toString(),'%PDF-1.4');
+  assert.equal(Buffer.concat(monthData).subarray(0,8).toString(),'%PDF-1.4');
   await page.locator('#report-type').selectOption('day');
   await page.locator('#report-day').fill('2025-02-12');
   await page.locator('#report-day').dispatchEvent('change');
