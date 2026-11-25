@@ -16,6 +16,8 @@ Sistema privado de **lançamento direto de vendas de baterias usadas**, garantia
 
 **[Alterar data e hora de venda com registro de quem corrigiu](docs/DATA_HORA_VENDAS.md)**
 
+**[Excluir vendas com histórico e consultar relatórios por dia/mês/ano em PDF](docs/CANCELAMENTOS_E_RELATORIOS.md)**
+
 ## Arquitetura
 
 - HTML, CSS e JavaScript sem build, hospedados no GitHub Pages;
@@ -55,3 +57,7 @@ Ao confirmar uma venda, o sistema abre automaticamente o comprovante WS (não fi
 ## Continuidade do aplicativo no celular
 
 Ao alternar para o WhatsApp, o sistema mantém o login Google e não desmonta o formulário ao receber novamente o evento de sessão ativa. Vendas não concluídas ganham **rascunho privado no Supabase, válido por até 30 minutos após a última edição**, para recuperação após o celular encerrar a página. O botão **Descartar rascunho** limpa uma tentativa; o salvamento de uma venda real também o apaga. Dados de clientes não são guardados no armazenamento permanente do navegador.
+
+## Exclusões e relatórios por período
+
+Sandro, Wanderson e Arthur podem **excluir/cancelar uma venda com motivo obrigatório**, preservando registro, responsável e auditoria completa. Vendas com acertos já pagos, dispensados ou em lote precisam de conciliação financeira antes de cancelamento. A aba **Relatórios** permite **Diário, Mensal e Anual** e exporta **PDF e CSV**, com totais calculados pelo Supabase em horário de Brasília.
