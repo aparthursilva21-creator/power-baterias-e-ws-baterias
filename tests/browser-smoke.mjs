@@ -151,10 +151,35 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
           return Promise.resolve({data:'power-expense-id',error:null});
         }
         if(name==='get_power_ws_team')return Promise.resolve({data:[{id:'00000000-0000-4000-8000-000000000099',role:'ws',email:'teste@example.test'}],error:null});
-        if(name==='get_power_ws_monthly_report')return Promise.resolve({data:{month:'2026-11',role:'admin',sales_count:1,
-           sales_revenue_cents:19000,power_repasse_sales_month_cents:6000,recovery_cost_sales_month_cents:1200,
-           ws_expenses_cents:0,ws_estimated_profit_cents:11800,power_received_in_month_cents:0,
+        if(name==='cancel_used_battery_sale'){
+          window.lastCancellation=params;
+          const sale=tables.used_battery_sales.find(x=>x.id===params.p_sale_id);
+          if(!sale)return Promise.resolve({data:null,error:{message:'Venda não encontrada'}});
+          if(sale.cancelled_at)return Promise.resolve({data:null,error:{message:'Já cancelada'}});
+          const before={...sale};
+          sale.cancelled_at=new Date().toISOString();
+          sale.cancelled_by='00000000-0000-4000-8000-000000000099';
+          sale.cancellation_reason=params.p_reason;
+          tables.used_sale_revisions.push({
+            id:crypto.randomUUID(),sale_id:sale.id,action:'cancelled',
+            actor_id:sale.cancelled_by,occurred_at:sale.cancelled_at,
+            reason:params.p_reason,
+            before_data:{sale:before,battery:tables.used_batteries.find(x=>x.id===sale.battery_id)},
+            after_data:{sale:{...sale},battery:tables.used_batteries.find(x=>x.id===sale.battery_id)}
+          });
+          return Promise.resolve({data:null,error:null});
+        }
+        if(name==='get_power_ws_period_report'){
+          window.lastReportQuery=params;
+          return Promise.resolve({data:{period_start:params.p_start,period_end_exclusive:params.p_end,
+           role:testRole,sales_count:1,sales_revenue_cents:19000,
+           power_repasse_sales_month_cents:6000,recovery_cost_sales_month_cents:1200,
+           ws_expenses_cents:testRole==='power'?null:0,
+           power_expenses_cents:testRole==='ws'?null:0,
+           ws_estimated_profit_cents:testRole==='power'?null:11800,
+           power_received_in_month_cents:0,
            power_pending_total_now_cents:6000,fully_settled_sales_in_month:0},error:null});
+        }
         return Promise.resolve({data:null,error:null});
       },
       channel(){return{on(){return this;},subscribe(){return this;}};},
@@ -193,6 +218,10 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   if(userRole==='power'){
     await page.locator(side+' [data-view="sales"]').click();
     assert.equal(await page.locator('[data-act="new-sale"]').count(),0,'Power nao cadastra venda de hoje');
+    assert.ok(await page.locator('[data-act="cancel-sale"]').first().isVisible(),'Sandro pode excluir venda');
+    await page.locator('[data-act="cancel-sale"]').first().click();
+    assert.ok(await page.locator('#cancel-sale-form').isVisible(),'Sandro pode informar motivo');
+    await page.locator('#modal-close').click();
     await page.locator('[data-act="new-historical-sale"]').click();
     assert.ok(await page.locator('#sale-form [name=sold_when]').isVisible(),'Sandro lança venda antiga');
     await page.locator('#modal-close').click();
@@ -203,6 +232,11 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
     await page.close();return;
   }
   if(userRole==='ws'){
+    await page.locator(side+' [data-view="sales"]').click();
+    assert.ok(await page.locator('[data-act="cancel-sale"]').first().isVisible(),'Wanderson pode excluir venda');
+    await page.locator('[data-act="cancel-sale"]').first().click();
+    assert.ok(await page.locator('#cancel-sale-form').isVisible(),'Wanderson pode informar motivo');
+    await page.locator('#modal-close').click();
     await page.locator(side+' [data-view="expenses"]').click();
     assert.ok((await page.locator('.page-heading').textContent()).includes('WS Baterias'),'WS vê suas despesas');
     assert.equal(await page.locator('[data-expense-branch="power"]').count(),0,'WS nao abre despesas Power');
@@ -350,6 +384,40 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   await page.locator(side+' [data-view="reports"]').click();
   await page.locator('#monthly-report .stat-card').first().waitFor({timeout:10000});
   assert.ok(await page.locator('#monthly-report').isVisible(),'relatório mensal renderiza');
+  assert.equal(await page.locator('#report-type').inputValue(),'month');
+  assert.ok(await page.locator('[data-act="download-report-pdf"]').isVisible());
+  const [monthlyPDF]=await Promise.all([
+    page.waitForEvent('download',{timeout:20000}),
+    page.locator('[data-act="download-report-pdf"]').click()
+  ]);
+  assert.match(monthlyPDF.suggestedFilename(),/Relatorio-month-/);
+  const monthData=[];for await(const x of await monthlyPDF.createReadStream())monthData.push(x);
+  assert.match(Buffer.concat(monthData).subarray(0,8).toString(),'%PDF-1.4');
+  await page.locator('#report-type').selectOption('day');
+  await page.locator('#report-day').fill('2025-02-12');
+  await page.locator('#report-day').dispatchEvent('change');
+  await page.waitForFunction(()=>window.lastReportQuery?.p_start==='2025-02-12');
+  const dayStart=await page.locator('#report-day').inputValue();
+  assert.equal(dayStart,'2025-02-12');
+  await page.locator('#monthly-report .stat-card').first().waitFor({timeout:10000});
+  const [dailyPDF]=await Promise.all([
+    page.waitForEvent('download',{timeout:20000}),
+    page.locator('[data-act="download-report-pdf"]').click()
+  ]);
+  assert.match(dailyPDF.suggestedFilename(),/Relatorio-day-2025-02-12/);
+  const dayData=[];for await(const x of await dailyPDF.createReadStream())dayData.push(x);
+  assert.equal(Buffer.concat(dayData).subarray(0,8).toString(),'%PDF-1.4');
+  await page.locator('#report-type').selectOption('year');
+  await page.locator('#report-year').fill('2025');
+  await page.locator('#report-year').dispatchEvent('change');
+  await page.waitForFunction(()=>window.lastReportQuery?.p_start==='2025-01-01');
+  assert.equal(await page.locator('#report-year').inputValue(),'2025');
+  await page.locator('#monthly-report .stat-card').first().waitFor({timeout:10000});
+  const [annualPDF]=await Promise.all([
+    page.waitForEvent('download',{timeout:20000}),
+    page.locator('[data-act="download-report-pdf"]').click()
+  ]);
+  assert.match(annualPDF.suggestedFilename(),/Relatorio-year-2025/);
   await page.close();
 }
 // Verifica o bug real: Supabase emite SIGNED_IN novamente ao voltar do WhatsApp.
