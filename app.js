@@ -23,7 +23,7 @@ const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Tran
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
 if(!MENU.some(x=>x[0]===current))current='dashboard';
-let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [] };
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let expenseBranch='ws';
@@ -350,7 +350,7 @@ window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
   clearTimeout(draftSaveTimer);
   activeSaleDraft=null;draftStore=null;draftCache={sale:null,historical_sale:null};
-  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[]};
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
   if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
@@ -371,6 +371,8 @@ async function loadAll(silent=false) {
     ['events',api.from('used_settlement_events').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['activity',api.from('used_battery_activity').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['saleRevisions',api.from('used_sale_revisions').select('*').order('occurred_at',{ascending:false}).limit(500)],
+    ['financialReviews',api.from('used_sale_financial_reviews').select('*').order('created_at',{ascending:false})],
+    ['financialReviewEvents',api.from('used_sale_financial_review_events').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['staff',api.rpc('get_power_ws_team')]
   ];
   if(canViewWSExpenses()) requests.push(
@@ -508,8 +510,8 @@ function salesView(){
  const receiptButton=canMakeWSReceipt(s)?
     '<button type="button" class="btn tiny ws-receipt-button" data-act="ws-receipt" data-id="'+s.id+'">▤ Notinha WS</button>':'';
  const actions='<div class="row-actions">'+
-  (canEditSale(s)?'<button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Corrigir</button>':'')+
-  (canCancelSale(s)?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Excluir venda</button>':'')+
+  (canEditSale(s)?'<button type="button" class="btn tiny secondary" data-act="edit-sale" data-id="'+s.id+'">Editar venda</button>':'')+
+  (canCancelSale(s)?'<button type="button" class="btn tiny danger" data-act="cancel-sale" data-id="'+s.id+'">Cancelar venda</button>':'')+
   '</div>';
  const allActions='<div class="row-actions">'+receiptButton+actions+'</div>';
  return '<tr><td><strong>'+stamp(s.sold_at)+'</strong>'+
@@ -735,6 +737,7 @@ document.addEventListener('click',async e=>{
   if(act==='new-historical-sale')openSale(true);
   if(act==='edit-sale')openEditSale(rows.sales.find(s=>s.id===btn.dataset.id));
   if(act==='cancel-sale')openCancelSale(rows.sales.find(s=>s.id===btn.dataset.id));
+  if(act==='resolve-financial-review')openResolveFinancialReview(rows.financialReviews.find(x=>x.id===btn.dataset.id));
   if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
   if(act==='batch-settle')openBatch();
   if(act==='remind-ws')await remindWS();
@@ -902,23 +905,83 @@ function openEditSale(s){
  });
 }
 function openCancelSale(s){
- if(!canCancelSale(s))return toast('Sua conta não pode excluir esta venda.','error');
+ if(!canCancelSale(s))return toast('Sua conta não pode cancelar esta venda.','error');
  const b=battery(s.battery_id),st=settleFor(s.battery_id);
- const paid=Number(st?.paid_cents||0)+Number(st?.waived_cents||0);
- const warning=paid>0?'<div class="note warn" style="margin-bottom:14px">Existe pagamento ou dispensa associado. O sistema não permitirá cancelar até a situação financeira ser corrigida e conciliada.</div>':'';
- const body=warning+'<div class="note error"><b>Exclusão com histórico permanente</b><br>Venda de '+esc(batteryDisplay(b))+' no valor de '+brl(s.sale_price_cents)+'. Depois de cancelada, sairá do painel e dos relatórios, mas ficará guardada no histórico. Nenhum dinheiro será estornado automaticamente.</div>'+
- '<form id="cancel-sale-form" class="field-grid" style="margin-top:18px">'+
- '<label class="field wide"><span>Motivo obrigatório</span><textarea name="reason" maxlength="500" minlength="5" required placeholder="Ex.: lançamento fictício ou duplicado"></textarea></label>'+
+ const hasBatch=rows.batchItems.some(x=>x.settlement_id===st?.id);
+ const paid=Number(st?.paid_cents||0);
+ const waived=Number(st?.waived_cents||0);
+ const needsReview=paid>0||waived>0||hasBatch;
+ const canReview=role==='power'||role==='admin';
+ const warning=needsReview?'<div class="note warn" style="margin-bottom:14px">'+
+  '<b>Acerto anterior identificado</b><div>Pagamento registrado: <strong>'+brl(paid)+
+  '</strong> · Dispensa: '+brl(waived)+(hasBatch?' · Participou de acerto em lote':'')+'.</div>'+
+  (canReview?
+   '<p>O cancelamento não apaga pagamentos passados nem devolve dinheiro automaticamente. '+
+   'Uma <b>pendência de conciliação financeira</b> ficará visível em Acertos até Sandro resolver.</p>':
+   '<p>Como esta venda já teve acerto, peça ao Sandro para efetuar o cancelamento com conferência financeira.</p>')+
+  '</div>':'';
+ const body=warning+'<div class="note"><b>Cancelar registro de venda</b><div>Bateria: '+
+  esc(batteryDisplay(b))+' · Cliente: '+esc(s.customer_name)+' · Valor: '+
+  brl(s.sale_price_cents)+'</div><p>A venda sairá dos totais e ficará preservada no histórico com o motivo e o responsável.</p></div>'+
+ '<form id="cancel-sale-form" class="field-grid" style="margin-top:16px">'+
+ '<label class="field wide"><span>Por que esta venda deve ser cancelada?</span>'+
+ '<textarea name="reason" maxlength="500" minlength="5" required placeholder="Ex.: venda lançada em duplicidade"></textarea></label>'+
+ (needsReview&&canReview?
+   '<label class="financial-ack wide"><input type="checkbox" name="acknowledge" value="yes" required>'+
+   '<span>Entendo que o pagamento anterior permanece registrado e que o acerto precisará ser conferido depois.</span></label>':'')+
  field('Digite CANCELAR para confirmar','confirm','text','','required autocomplete="off" class="wide"')+'</form>';
- modal('Excluir venda',body,'<button class="btn secondary" type="button" data-modal-close>Voltar</button><button class="btn danger" type="submit" form="cancel-sale-form">Cancelar lançamento</button>');
+ modal('Cancelar venda',body,
+ '<button class="btn secondary" type="button" data-modal-close>Voltar</button>'+
+ '<button class="btn danger" type="submit" form="cancel-sale-form" '+(needsReview&&!canReview?'disabled':'')+'>Confirmar cancelamento</button>');
+ if(needsReview&&!canReview)return;
  $('#cancel-sale-form').addEventListener('submit',e=>{
   e.preventDefault();
   const d=Object.fromEntries(new FormData(e.currentTarget));
   if(d.confirm.trim()!=='CANCELAR')return toast('Digite CANCELAR exatamente para confirmar.','error');
   if(d.reason.trim().length<5)return toast('Descreva o motivo.','error');
-  void runRpc('cancel_used_battery_sale',{
-   p_sale_id:s.id,p_reason:d.reason.trim()
-  },'Venda cancelada e removida dos totais; histórico preservado.');
+  if(needsReview && d.acknowledge!=='yes')
+   return toast('Confirme a ciência do acerto financeiro anterior.','error');
+  const rpc=needsReview?'cancel_used_battery_sale_with_review':'cancel_used_battery_sale';
+  const args=needsReview?
+   {p_sale_id:s.id,p_reason:d.reason.trim(),p_acknowledge_financial_history:true}:
+   {p_sale_id:s.id,p_reason:d.reason.trim()};
+  void runRpc(rpc,args,needsReview?
+   'Venda cancelada. Acerto anterior preservado e conciliação pendente em Acertos.':
+   'Venda cancelada. Auditoria preservada e ambos avisados.');
+ });
+}
+function openResolveFinancialReview(item){
+ if(!item||item.status!=='pending'||!canPay())
+  return toast('Somente Sandro ou administrador podem concluir a conferência.','error');
+ const related=rows.saleRevisions.find(x=>x.sale_id===item.sale_id&&x.action==='cancelled');
+ const oldSale=related?.before_data?.sale;
+ const b=oldSale?battery(oldSale.battery_id):null;
+ const body='<div class="note warn"><b>Conferência de acerto de venda cancelada</b>'+
+ '<p>Bateria: '+esc(batteryDisplay(b))+' · Cliente: '+esc(oldSale?.customer_name||'—')+
+ ' · Pagamento registrado: <strong>'+brl(item.paid_at_cancellation_cents)+
+ '</strong>. Esse dinheiro não foi estornado automaticamente.</p></div>'+
+ '<form id="resolve-financial-form" class="field-grid" style="margin-top:16px">'+
+ selectField('O que aconteceu com o acerto?','resolution_method',[
+  ['refunded','Valor devolvido de fato à WS'],
+  ['compensated','Valor compensado em outro acerto (manual)'],
+  ['record_error','Pagamento registrado incorretamente'],
+  ['other','Outra solução, explicada abaixo']
+ ],'refunded')+
+ '<label class="field wide"><span>Explique a movimentação e informe a referência/comprovante, se houver</span>'+
+ '<textarea name="reason" minlength="8" maxlength="500" required placeholder="Ex.: devolução por PIX em 25/11, comprovante conferido"></textarea></label>'+
+ '<div class="note wide">Só marque como resolvido depois da conferência real com Wanderson. '+
+ 'O aplicativo registra sua declaração, mas não transfere valores nem desconta automaticamente de outra venda.</div></form>';
+ modal('Resolver acerto cancelado',body,
+ '<button type="button" class="btn secondary" data-modal-close>Voltar</button>'+
+ '<button type="submit" class="btn" form="resolve-financial-form">Confirmar conferência</button>');
+ $('#resolve-financial-form').addEventListener('submit',e=>{
+  e.preventDefault();
+  const d=Object.fromEntries(new FormData(e.currentTarget));
+  if(d.reason.trim().length<8)return toast('Explique como o acerto foi resolvido.','error');
+  void runRpc('resolve_used_sale_financial_review',{
+   p_review_id:item.id,p_resolution_method:d.resolution_method,
+   p_reason:d.reason.trim()
+  },'Conciliação concluída, com responsável e justificativa no histórico.');
  });
 }
 
