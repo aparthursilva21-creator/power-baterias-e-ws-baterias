@@ -69,7 +69,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
       sale_price_cents:19000,payment_method:'pix',warranty_days:30,sold_by:'00000000-0000-4000-8000-000000000099',sold_at:now}],
       used_battery_settlements:[{id:sid,battery_id:id,sale_id:'00000000-0000-4000-8000-000000000012',owed_cents:6000,paid_cents:0,waived_cents:0,created_at:now}],
       used_settlement_batches:[],used_settlement_batch_items:[],used_settlement_events:[],used_battery_activity:[],used_sale_revisions:[],
-      ws_expenses:[],ws_expense_events:[],pbws_sale_drafts:seedDraft?[seedDraft]:[]
+      ws_expenses:[],ws_expense_events:[],used_sale_financial_reviews:[],used_sale_financial_review_events:[],pbws_sale_drafts:seedDraft?[seedDraft]:[]
     };
     const stub={
       from(name){
@@ -353,7 +353,8 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
 
   await page.locator('[data-act="edit-sale"]').first().click();
   assert.ok(await page.locator('#edit-sale-form').isVisible(),'correcao de venda acessivel');
-  assert.ok(await page.locator('#edit-sale-form [name=sold_when]').isVisible(),'data editavel para venda normal');
+  await page.locator('#edit-sale-advanced summary').click();
+  assert.ok(await page.locator('#edit-sale-form [name=sold_when]').isVisible(),'data editavel nos outros dados');
   await page.locator('#edit-sale-form [name=sold_when]').fill('2025-02-09T15:45');
   await page.locator('#edit-sale-form [name=reason]').fill('Cliente confirmou que a venda foi realizada neste dia e horario');
   await page.locator('.dialog-footer button[form="edit-sale-form"]').click();
