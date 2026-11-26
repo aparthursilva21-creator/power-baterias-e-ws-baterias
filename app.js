@@ -23,7 +23,7 @@ const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Tran
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
 if(!MENU.some(x=>x[0]===current))current='dashboard';
-let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [], vales: [], valeAllocations: [] };
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [], vales: [], valeAllocations: [], allSales: [], allSettlements: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let expenseBranch='ws';
@@ -354,7 +354,7 @@ window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
   clearTimeout(draftSaveTimer);
   activeSaleDraft=null;draftStore=null;draftCache={sale:null,historical_sale:null};
-  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[],vales:[],valeAllocations:[]};
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[],vales:[],valeAllocations:[],allSales:[],allSettlements:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
   if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
@@ -395,6 +395,7 @@ async function loadAll(silent=false) {
     if(failed) throw new Error(failed.key+': '+explain(failed.error));
     for(const x of resolved)rows[x.key]=x.data || [];
     // Vendas canceladas ficam preservadas no banco e na auditoria, mas nao contam na operacao.
+    rows.allSales=rows.sales;rows.allSettlements=rows.settlements;
     rows.sales=rows.sales.filter(s=>!s.cancelled_at);
     const activeSales=new Set(rows.sales.map(s=>s.id));
     rows.settlements=rows.settlements.filter(s=>activeSales.has(s.sale_id));
@@ -712,48 +713,60 @@ function warrantyView(){
  return heading('Garantias','A garantia é vinculada à venda e permanece no histórico.')+
  panel('Garantias registradas',tbl(['Bateria','Cliente','Início','Vencimento','Status'],list));
 }
+function activityChanges(x){
+ const before=x.before_data||{},after=x.after_data||{};
+ const fields=[
+ ['sale','customer_name','Cliente'],['sale','customer_phone','Telefone'],['sale','vehicle_plate','Placa'],
+ ['battery','brand','Marca'],['battery','model','Modelo'],['battery','amperage_ah','Amperagem'],['battery','serial_number','Número de série'],
+ ['sale','sale_price_cents','Valor da venda',brl],['battery','recovery_cost_cents','Custo de recuperação',brl],
+ ['sale','payment_method','Forma de pagamento',v=>METHODS[v]||v],['sale','warranty_days','Garantia',v=>v+' dias'],
+ ['sale','sold_at','Data da venda',stamp],['sale','notes','Observações']
+ ];
+ return fields.flatMap(([obj,key,label,format])=>{
+  const a=before[obj]?.[key],b=after[obj]?.[key];if(a===b)return [];
+  const show=v=>v==null||v===''?'Não informado':format?format(v):String(v);
+  return [label+': '+show(a)+' → '+show(b)];
+ });
+}
 function activityView(){
+ const who=id=>staffName(id);
+ const subject=st=>{
+  const sale=rows.allSales.find(x=>x.id===st?.sale_id);
+  return [batteryDisplay(battery(st?.battery_id)),sale?.customer_name].filter(Boolean).join(' · ');
+ };
+ const firstRevision=id=>[...rows.saleRevisions].reverse().find(x=>x.sale_id===id)?.before_data;
  const events=[
-  ...rows.saleRevisions.map(x=>{
-    const original=x.before_data?.sale||x.before_data||{};
-    const oldDate=x.before_data?.sale?.sold_at;
-    const newDate=x.after_data?.sale?.sold_at;
-    const dateChanged=x.action==='corrected'&&oldDate&&newDate&&oldDate!==newDate;
-    const b=x.before_data?.battery||x.after_data?.battery||battery(original.battery_id);
-    return {
-      at:x.occurred_at,who:x.actor_id,category:'Venda',
-      description:x.action==='cancelled'?'Venda cancelada':
-        dateChanged?'Data e horário corrigidos':'Venda corrigida',
-      detail:(b?batteryDisplay(b)+' · ':'')+
-        (dateChanged?'ANTES: '+stamp(oldDate)+' → DEPOIS: '+stamp(newDate)+' · ':'')+
-        (x.action==='cancelled'?'Cliente: '+(original.customer_name||'—')+
-          ' · Valor: '+brl(original.sale_price_cents)+
-          ' · Venda: '+stamp(original.sold_at)+' · ':'')+
-        'Motivo: '+hideInternalBatteryCodes(x.reason)+
-        (x.action==='cancelled'?' · Registro preservado para auditoria'+
-          (x.after_data?.financial_review?' · ACERTO ANTERIOR: '+
-           brl(x.after_data.financial_review.paid_at_cancellation_cents)+
-           ' · Conciliação aberta':''):'')
-    };
-  }),
-  ...rows.financialReviewEvents.map(x=>({
-    at:x.occurred_at,who:x.actor_id,category:'Conciliação',
-    description:x.event==='opened'?'Conferência financeira aberta':'Conferência financeira concluída',
-    detail:'Pagamento registrado: '+brl(x.after_data?.paid_at_cancellation_cents||0)+
-      ' · '+esc(x.reason||'')
-  })),
-  ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:hideInternalBatteryCodes(x.reason)+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
-  ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:hideInternalBatteryCodes(x.description)||''})),
-  ...rows.powerExpenseEvents.map(x=>({
-    at:x.occurred_at,who:x.actor_id,category:'Despesa Power',
-    description:x.action==='created'?'Cadastrada':'Corrigida',
-    detail:x.reason||''
-  })),
-  ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa',description:x.action==='created'?'Cadastrada':'Corrigida',detail:x.reason+' · '+brl(x.new_amount_cents)}))
+ ...rows.allSales.map(x=>{
+   const original=firstRevision(x.id),sale=original?.sale||x,b=original?.battery||battery(x.battery_id);
+   return {at:x.recorded_at||x.sold_at,who:x.recorded_by||x.sold_by,category:'Venda',description:'Venda registrada por '+who(x.recorded_by||x.sold_by),detail:[batteryDisplay(b)+' · Cliente: '+sale.customer_name,'Valor: '+brl(sale.sale_price_cents),...(x.is_historical?['Venda realizada em '+stamp(sale.sold_at)]:[])]};
+ }),
+ ...rows.saleRevisions.map(x=>{
+   const original=x.before_data?.sale||x.before_data||{},b=x.before_data?.battery||x.after_data?.battery||battery(original.battery_id);
+   const cancelled=x.action==='cancelled';
+   const detail=[batteryDisplay(b)+' · Cliente: '+(original.customer_name||'—'),...(cancelled?['Valor da venda: '+brl(original.sale_price_cents)]:activityChanges(x)),'Motivo: '+(x.reason||'Não informado')];
+   if(cancelled&&x.after_data?.financial_review)detail.push('Acerto anterior preservado. Conferência financeira pendente.');
+   return {at:x.occurred_at,who:x.actor_id,category:'Venda',description:(cancelled?'Venda cancelada por ':'Venda editada por ')+who(x.actor_id),detail};
+ }),
+ ...rows.financialReviewEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:(x.event==='opened'?'Conferência de acerto aberta por ':'Conferência concluída por ')+who(x.actor_id),detail:[x.reason||'']})),
+ ...rows.events.filter(x=>x.action!=='created').map(x=>{
+   const st=rows.allSettlements.find(y=>y.id===x.settlement_id),actor=who(x.actor_id);
+   const delta=Number(x.new_paid_cents)-Number(x.old_paid_cents),saldo=Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents);
+   const vale=x.action==='payment'?rows.valeAllocations.filter(a=>a.settlement_id===x.settlement_id&&(x.batch_id?a.batch_id===x.batch_id:!a.batch_id&&new Date(a.applied_at).getTime()===new Date(x.occurred_at).getTime())).reduce((sum,a)=>sum+Number(a.amount_cents),0):0;
+   const labels={payment:saldo===0?'Acerto confirmado por ':'Pagamento parcial registrado por ',historical_payment:'Pagamento antigo registrado por ',payment_correction:'Pagamento corrigido por ',amount_adjustment:'Valor do acerto editado por ',waiver:'Saldo dispensado por ',reopen:'Acerto reaberto por '};
+   const detail=[subject(st)];
+   if(['payment','historical_payment'].includes(x.action))detail.push('Valor acertado: '+brl(delta),'Vale descontado: '+brl(vale),'Dinheiro recebido: '+brl(delta-vale));
+   if(x.action==='payment_correction')detail.push('Correção do dinheiro recebido: '+brl(delta));
+   if(x.action==='amount_adjustment')detail.push('Repasse: '+brl(x.old_owed_cents)+' → '+brl(x.new_owed_cents));
+   if(['waiver','reopen'].includes(x.action))detail.push('Valor dispensado: '+brl(x.old_waived_cents)+' → '+brl(x.new_waived_cents));
+   detail.push('Saldo pendente: '+brl(saldo));if(x.reason&&!['payment','historical_payment'].includes(x.action))detail.push('Motivo: '+hideInternalBatteryCodes(x.reason));
+   return {at:x.occurred_at,who:x.actor_id,category:'Acerto',description:(labels[x.action]||'Acerto atualizado por ')+actor,detail};
+ }),
+ ...rows.vales.flatMap(v=>[{at:v.created_at,who:v.created_by,category:'Vale',description:'Vale registrado por '+who(v.created_by),detail:['Wanderson: '+brl(v.amount_cents),v.description]},...(v.cancelled_at?[{at:v.cancelled_at,who:v.cancelled_by,category:'Vale',description:'Vale cancelado por '+who(v.cancelled_by),detail:[brl(v.amount_cents),'Motivo: '+v.cancellation_reason]}]:[])]),
+ ...rows.powerExpenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa Power',description:(x.action==='created'?'Despesa registrada por ':'Despesa corrigida por ')+who(x.actor_id),detail:[brl(x.new_amount_cents),x.reason||'']})),
+ ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa WS',description:(x.action==='created'?'Despesa registrada por ':'Despesa corrigida por ')+who(x.actor_id),detail:[brl(x.new_amount_cents),x.reason||'']}))
  ].sort((a,b)=>new Date(b.at)-new Date(a.at)).slice(0,600);
- const content=events.map(x=>'<tr><td>'+stamp(x.at)+'</td><td>'+statusBadge(x.category,'gray')+'</td><td>'+esc(x.description)+'</td><td>'+esc(x.detail)+'</td><td>'+esc(staffName(x.who))+'</td></tr>').join('');
- return heading('Histórico completo','Cada lançamento, correção, dispensa e acerto com data, hora e autor.')+
- panel('Auditoria da parceria',tbl(['Data / Hora','Área','Ação','Detalhes','Responsável'],content));
+ const content=events.map(x=>'<article class="list-entry" style="align-items:flex-start"><div style="min-width:0;overflow-wrap:anywhere">'+statusBadge(x.category,'gray')+'<div style="margin-top:6px"><strong>'+esc(x.description)+'</strong></div>'+x.detail.filter(Boolean).map(d=>'<div class="cell-sub" style="white-space:normal;margin-top:4px">'+esc(d)+'</div>').join('')+'<small style="margin-top:8px">'+stamp(x.at)+' · '+esc(who(x.who))+'</small></div></article>').join('');
+ return heading('Histórico','Veja o que aconteceu, quem fez e quando.')+panel('Atividades recentes','<div class="panel-body lined-list">'+(content||'<div class="empty">Nenhuma atividade registrada.</div>')+'</div>');
 }
 document.addEventListener('click',async e=>{
  const receiptAction=e.target.closest('[data-receipt-action]');
@@ -993,7 +1006,7 @@ function openCancelSale(s){
  const needsReview=paid>0||waived>0||hasBatch;
  const canReview=role==='power'||role==='admin';
  const warning=needsReview?'<div class="note warn" style="margin-bottom:14px">'+
-  '<b>Acerto anterior identificado</b><div>Pagamento registrado: <strong>'+brl(paid)+
+  '<b>Acerto anterior identificado</b><div>Dinheiro recebido: <strong>'+brl(paid-appliedVale(st?.id))+'</strong> · Vales usados: <strong>'+brl(appliedVale(st?.id))+
   '</strong> · Dispensa: '+brl(waived)+(hasBatch?' · Participou de acerto em lote':'')+'.</div>'+
   (canReview?
    '<p>O cancelamento não apaga pagamentos passados nem devolve dinheiro automaticamente. '+
@@ -1036,7 +1049,7 @@ function openResolveFinancialReview(item){
  const b=oldSale?battery(oldSale.battery_id):null;
  const body='<div class="note warn"><b>Conferência de acerto de venda cancelada</b>'+
  '<p>Bateria: '+esc(batteryDisplay(b))+' · Cliente: '+esc(oldSale?.customer_name||'—')+
- ' · Pagamento registrado: <strong>'+brl(item.paid_at_cancellation_cents)+
+ ' · Dinheiro recebido: <strong>'+brl(Number(item.paid_at_cancellation_cents)-appliedVale(item.settlement_id))+'</strong> · Vales utilizados: <strong>'+brl(appliedVale(item.settlement_id))+
  '</strong>. Esse dinheiro não foi estornado automaticamente.</p></div>'+
  '<form id="resolve-financial-form" class="field-grid" style="margin-top:16px">'+
  selectField('O que aconteceu com o acerto?','resolution_method',[
@@ -1048,7 +1061,7 @@ function openResolveFinancialReview(item){
  '<label class="field wide"><span>Explique a movimentação e informe a referência/comprovante, se houver</span>'+
  '<textarea name="reason" minlength="8" maxlength="500" required placeholder="Ex.: devolução por PIX em 25/11, comprovante conferido"></textarea></label>'+
  '<div class="note wide">Só marque como resolvido depois da conferência real com Wanderson. '+
- 'O aplicativo registra sua declaração, mas não transfere valores nem desconta automaticamente de outra venda.</div></form>';
+ 'O aplicativo registra sua declaração. Não transfere dinheiro nem devolve vales automaticamente ao saldo disponível.</div></form>';
  modal('Resolver acerto cancelado',body,
  '<button type="button" class="btn secondary" data-modal-close>Voltar</button>'+
  '<button type="submit" class="btn" form="resolve-financial-form">Confirmar conferência</button>');
@@ -1139,7 +1152,7 @@ function openBatch(){
  if(ss.length>100)return toast('Selecione no máximo 100 baterias por lote.','error');
  const items=ss.map(s=>{
   const b=battery(s.battery_id),old=remaining(s);
-  return '<div class="batch-item" data-settle-item="'+s.id+'"><div class="batch-item-head"><div><strong>'+esc(batteryDisplay(b))+'</strong><div class="cell-sub">Pendente: '+brl(old)+' · Pago antes: '+brl(s.paid_cents)+'</div></div>'+statusBadge('Selecionada','yellow')+'</div><div class="batch-item-fields">'+
+  return '<div class="batch-item" data-settle-item="'+s.id+'"><div class="batch-item-head"><div><strong>'+esc(batteryDisplay(b))+'</strong><div class="cell-sub">Pendente: '+brl(old)+' · Recebido antes: '+brl(cashReceived(s))+' · Vales: '+brl(appliedVale(s.id))+'</div></div>'+statusBadge('Selecionada','yellow')+'</div><div class="batch-item-fields">'+
   field('Novo valor total para Sandro','owed','number',fromCents(s.owed_cents),'min="0.01" step="0.01" required')+
   field('Dinheiro recebido agora (R$)','paid','number',fromCents(old),'min="0" step="0.01" required')+
   field('Desconto de vale (R$)','vale','number','0.00','min="0" max="'+fromCents(availableVales())+'" step="0.01" required')+
