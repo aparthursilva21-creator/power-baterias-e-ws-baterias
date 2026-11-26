@@ -110,6 +110,7 @@ input[type=checkbox]{accent-color:#386a50}
 #modal-root{background:#18261cb8;backdrop-filter:blur(4px)}
 #modal-root:not(:has(.ws-receipt)) .dialog{background:#fff;border-color:#d7e4da;box-shadow:0 18px 55px #14241a42;animation:none}
 #modal-root:not(:has(.ws-receipt)) .dialog-header{border-color:#e1e9e2}
+#modal-root:has(.ws-receipt) .dialog-header h2{color:#e8f2ff}
 #modal-root:not(:has(.ws-receipt)) .dialog-footer{border-color:#e1e9e2;background:#f8faf8}
 .dialog-header h2{color:#213728}
 .batch-item,.batch-total{background:#f3f7f3;border-color:#dbe6dc}
