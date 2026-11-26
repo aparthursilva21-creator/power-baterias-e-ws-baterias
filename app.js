@@ -1,6 +1,6 @@
 import {receiptHTML,downloadReceipt,shareReceipt,soldBatteryName} from './ws-receipt.js?v=3';
 import {SaleDraftStore,SALE_DRAFT_MINUTES} from './sale-drafts.js?v=1';
-import {downloadPeriodPDF} from './report-pdf.js?v=2';
+import {downloadPeriodPDF} from './report-pdf.js?v=3';
 
 /* Power Baterias × WS Baterias
    Operação remota: Supabase Auth + RLS + funções SQL transacionais.
@@ -23,7 +23,7 @@ const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Tran
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
 if(!MENU.some(x=>x[0]===current))current='dashboard';
-let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [] };
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [], vales: [], valeAllocations: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let expenseBranch='ws';
@@ -122,6 +122,10 @@ const staffName = id => {
 const battery = id => rows.batteries.find(b => b.id === id);
 const saleFor = id => rows.sales.find(s => s.battery_id === id);
 const settleFor = id => rows.settlements.find(s => s.battery_id === id);
+const appliedVale = (id,key='settlement_id') => rows.valeAllocations.filter(a=>a[key]===id).reduce((sum,a)=>sum+Number(a.amount_cents),0);
+const valeBalance = v => v.cancelled_at?0:Math.max(0,Number(v.amount_cents)-appliedVale(v.id,'vale_id'));
+const availableVales = () => rows.vales.reduce((sum,v)=>sum+valeBalance(v),0);
+const cashReceived = s => Number(s.paid_cents||0)-appliedVale(s.id);
 const remaining = s => Math.max(0, Number(s.owed_cents) - Number(s.paid_cents) - Number(s.waived_cents));
 function settlingStatus(s) {
   if (!s) return ['Sem venda','gray'];
@@ -350,7 +354,7 @@ window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
   clearTimeout(draftSaveTimer);
   activeSaleDraft=null;draftStore=null;draftCache={sale:null,historical_sale:null};
-  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[]};
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[],vales:[],valeAllocations:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
   if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
@@ -373,6 +377,8 @@ async function loadAll(silent=false) {
     ['saleRevisions',api.from('used_sale_revisions').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['financialReviews',api.from('used_sale_financial_reviews').select('*').order('created_at',{ascending:false})],
     ['financialReviewEvents',api.from('used_sale_financial_review_events').select('*').order('occurred_at',{ascending:false}).limit(500)],
+    ['vales',api.from('ws_vales').select('*').order('created_at',{ascending:false})],
+    ['valeAllocations',api.from('ws_vale_allocations').select('*')],
     ['staff',api.rpc('get_power_ws_team')]
   ];
   if(canViewWSExpenses()) requests.push(
@@ -530,6 +536,26 @@ function salesView(){
  '</div>')+
  '<div class="sales-layout">'+panel('Vendas registradas',tbl(['Data da venda / Cadastro','Bateria','Cliente','Venda','Garantia','Acerto','Ações'],content))+'</div>';
 }
+function valePanel(){
+ const html=rows.vales.map(v=>{
+ const used=appliedVale(v.id,'vale_id'),left=valeBalance(v);
+ const status=v.cancelled_at?'Cancelado':left===0?'Utilizado':used?'Parcial':'Disponível';
+ return '<div class="list-entry"><div><strong>'+esc(v.description)+'</strong><small>'+stamp(v.created_at)+' · '+esc(staffName(v.created_by))+'</small><small>Original: '+brl(v.amount_cents)+' · Utilizado: '+brl(used)+(v.cancelled_at?' · '+esc(v.cancellation_reason):'')+'</small></div><div class="text-right"><strong>'+brl(left)+'</strong><small>'+statusBadge(status,left?'yellow':'gray')+'</small>'+
+ (canPay()&&!v.cancelled_at&&!used?'<button class="btn tiny danger" data-act="cancel-vale" data-id="'+v.id+'">Cancelar</button>':'')+'</div></div>';
+ }).join('')||'<div class="empty">Nenhum vale registrado.</div>';
+ return panel('Vales do Wanderson','<div class="panel-body lined-list"><div class="note"><b>Saldo disponível para descontar: '+brl(availableVales())+'</b><p>Registre um vale e escolha quanto descontar ao fazer o acerto. O valor descontado não conta como dinheiro recebido. Cada vale só pode ser usado até seu saldo.</p></div>'+html+'</div>',canPay()?button('+ Registrar vale','new-vale'):'');
+}
+function openVale(v=null){
+ if(!canPay())return toast('Apenas Sandro ou administrador podem gerenciar vales.','error');
+ const cancelling=!!v;
+ const body='<form id="vale-form" class="field-grid">'+(cancelling?'<div class="note wide">Cancelar vale de '+brl(v.amount_cents)+': '+esc(v.description)+'</div>':field('Valor do vale (R$)','amount','number','','min="0.01" max="1000000" step="0.01" required'))+
+ '<label class="field wide"><span>'+(cancelling?'Motivo do cancelamento':'Descrição do vale')+'</span><textarea name="description" required minlength="'+(cancelling?5:3)+'" maxlength="300" placeholder="Ex.: vale combinado com Wanderson"></textarea></label></form>';
+ modal(cancelling?'Cancelar vale':'Registrar vale',body,'<button type="button" class="btn secondary" data-modal-close>Voltar</button><button class="btn" form="vale-form" type="submit">'+(cancelling?'Confirmar cancelamento':'Salvar vale')+'</button>');
+ $('#vale-form').addEventListener('submit',e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
+ try{if(cancelling)void runRpc('cancel_ws_vale',{p_vale_id:v.id,p_reason:d.description.trim()},'Vale cancelado e preservado no histórico.');
+ else void runRpc('record_ws_vale',{p_amount_cents:cents(d.amount),p_description:d.description.trim()},'Vale registrado. Disponível para desconto nos acertos.');
+ }catch(err){toast(explain(err),'error');}});
+}
 function settlementView() {
  const pending=rows.settlements.filter(x=>remaining(x)>0);
  const openReviews=rows.financialReviews.filter(x=>x.status==='pending');
@@ -541,7 +567,7 @@ function settlementView() {
   return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(bat))+
    '</strong><small>Cliente: '+esc(original?.customer_name||'—')+
    ' · Cancelada: '+stamp(r.created_at)+'</small>'+
-   '<small>Pagamento anterior: '+brl(r.paid_at_cancellation_cents)+
+   '<small>Acerto anterior: '+brl(r.paid_at_cancellation_cents)+' (vales: '+brl(appliedVale(r.settlement_id))+')'+
    ' · Dispensa: '+brl(r.waived_at_cancellation_cents)+
    (r.batch_related?' · Acerto em lote':'')+'</small></div>'+
    (r.status==='pending'?(canPay()?
@@ -564,13 +590,13 @@ function settlementView() {
   const b=battery(s.battery_id),sale=saleFor(s.battery_id),sts=settlingStatus(s);
   const pick=canPay()&&remaining(s)>0?'<input type="checkbox" data-select-settle="'+s.id+'" aria-label="Selecionar acerto '+esc(batteryDisplay(b))+'" '+(selectedSettle.has(s.id)?'checked':'')+'>':'';
   const actions=canPay()?'<button class="btn tiny secondary" type="button" data-act="single-settlement" data-id="'+s.id+'">Gerenciar</button>':'—';
-  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(batteryDisplay(b))+'</div><div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Venda registrada')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(s.paid_cents)+'</td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
+  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(batteryDisplay(b))+'</div><div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Venda registrada')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(cashReceived(s))+'<div class="cell-sub">Vale: '+brl(appliedVale(s.id))+'</div></td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
  }).join('');
- const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto em lote</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(x.total_paid_cents)+'</strong><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
+ const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto em lote</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(Number(x.total_paid_cents)-appliedVale(x.id,'batch_id'))+'</strong><small>Vale: '+brl(appliedVale(x.id,'batch_id'))+'</small><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
  return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?'<div class="btn-row">'+button('✓ Acertar selecionadas','batch-settle')+(pending.length?button('🔔 Cobrar WS','remind-ws','secondary'):'')+'</div>':'')+
- '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+Number(s.paid_cents),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
- reviewsPanel+
- panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Já pago','Falta','Situação',''],rowsHtml))+
+ '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+cashReceived(s),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
+ valePanel()+reviewsPanel+
+ panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Recebido / vale','Falta','Situação',''],rowsHtml))+
  panel('Últimos acertos em lote','<div class="panel-body lined-list">'+batchesHtml+'</div>')+
  '<div class="note">Apenas Sandro ou administrador podem confirmar pagamentos, corrigir valores ou dispensar cobrança. Cada alteração fica no histórico.</div>';
 }
@@ -660,6 +686,7 @@ function reportSummary(r,period=reportWindow()){
  '<div class="panel-body lined-list">'+
  line('Total devido à Power por vendas no período',brl(r.power_repasse_sales_month_cents))+
  line('Pagamentos recebidos pela Power no período',brl(r.power_received_in_month_cents))+
+ line('Vales descontados no período',brl(r.ws_vales_applied_cents))+
  line('Desses, referentes a vendas canceladas',brl(r.power_cancelled_receipts_in_period_cents))+
  line('Conciliações pendentes hoje',String(r.financial_reviews_pending_count||0))+
  line('Valor de pagamentos a conferir',brl(r.financial_reviews_pending_paid_cents))+
@@ -784,6 +811,8 @@ document.addEventListener('click',async e=>{
   if(act==='resolve-financial-review')openResolveFinancialReview(rows.financialReviews.find(x=>x.id===btn.dataset.id));
   if(act==='single-settlement')openSettlement(rows.settlements.find(x=>x.id===btn.dataset.id));
   if(act==='batch-settle')openBatch();
+  if(act==='new-vale')openVale();
+  if(act==='cancel-vale'){const v=rows.vales.find(x=>x.id===btn.dataset.id);if(v)openVale(v);}
   if(act==='remind-ws')await remindWS();
   if(act==='new-expense')openExpense();
   if(act==='new-historical-expense')openExpense(null,true);
@@ -1045,10 +1074,11 @@ function openSettlement(s) {
  ['correct_paid','Corrigir pagamento registrado'],
  ['reopen','Reabrir valor dispensado']
  ];
- const body='<div class="note">Bateria <b>'+esc(batteryDisplay(b))+'</b> · Status: <b>'+sts[0]+'</b> · Total: <b>'+brl(s.owed_cents)+'</b> · Pago: <b>'+brl(s.paid_cents)+'</b> · Pendente: <b>'+brl(remaining(s))+'</b></div>'+
+ const body='<div class="note">Bateria <b>'+esc(batteryDisplay(b))+'</b> · Status: <b>'+sts[0]+'</b> · Total: <b>'+brl(s.owed_cents)+'</b> · Pago: <b>'+brl(cashReceived(s))+'</b> · Vales usados: <b>'+brl(appliedVale(s.id))+'</b> · Pendente: <b>'+brl(remaining(s))+'</b></div>'+
  '<form id="settlement-form" class="field-grid" style="margin-top:16px">'+
  selectField('Operação','action',opts,remaining(s)?'payment':'adjust_owed','id="settlement-action"')+
- field('Valor da operação (R$)','amount','number',fromCents(remaining(s)),'step="0.01" min="0"')+
+ field('Valor da operação / dinheiro recebido (R$)','amount','number',fromCents(remaining(s)),'step="0.01" min="0"')+
+ '<div id="single-vale-field" '+(remaining(s)?'':'hidden')+'>'+field('Desconto de vale (R$)','vale','number','0.00','step="0.01" min="0" max="'+fromCents(Math.min(remaining(s),availableVales()))+'"')+'<small>Disponível: '+brl(availableVales())+'</small></div>'+
  '<label class="field wide"><span>Justificativa (obrigatória para correção, edição e dispensa)</span><textarea name="reason" maxlength="400"></textarea></label></form>'+
  '<div class="note warn" style="margin-top:15px">Correção de pagamento permite valor negativo (ex.: -10,00 para diminuir o pago). Para dispensar ou reabrir, o valor é ignorado. Toda mudança deixa registro de data, hora e responsável.</div>';
  modal('Gerenciar acerto',body,'<button class="btn secondary" type="button" data-modal-close>Cancelar</button><button class="btn" type="submit" form="settlement-form">Confirmar alteração</button>');
@@ -1056,10 +1086,13 @@ function openSettlement(s) {
  action.addEventListener('change',()=>{
   const amount=$('#settlement-form [name=amount]');
   amount.disabled=['waive','reopen'].includes(action.value);
+  $('#single-vale-field').hidden=action.value!=='payment';
+  $('#settlement-form [name=vale]').value='0.00';
   amount.min=action.value==='correct_paid'?'':action.value==='adjust_owed'?'0.01':'0';
   if(action.value==='adjust_owed')amount.value=fromCents(s.owed_cents);
   if(action.value==='payment')amount.value=fromCents(remaining(s));
  });
+ $('#settlement-form [name=vale]').addEventListener('input',e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&n>=0)$('#settlement-form [name=amount]').value=fromCents(Math.max(0,remaining(s)-Math.round(n*100)));});
  $('#settlement-form').addEventListener('submit',e=>{
   e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
   if(['adjust_owed','waive','correct_paid','reopen'].includes(d.action)&&d.reason.trim().length<5) return toast('Informe a justificativa com pelo menos 5 caracteres.','error');
@@ -1070,6 +1103,11 @@ function openSettlement(s) {
     if(!Number.isFinite(n)||n===0)return toast('Informe o valor de correção diferente de zero.','error');
     value=Math.sign(n)*cents(String(Math.abs(n)));
    }else value=cents(d.amount);
+  }
+  if(d.action==='payment'){
+   let v;try{v=cents(d.vale||'0');}catch(err){return toast(explain(err),'error');}
+   if(v>availableVales()||value+v>remaining(s)||value+v<=0)return toast('Confira o dinheiro recebido, o saldo da bateria e os vales disponíveis.','error');
+   void runRpc('pay_used_settlement_with_vale',{p_settlement_id:s.id,p_cash_cents:value,p_vale_cents:v,p_reason:d.reason||null},'Acerto atualizado. Dinheiro e vale registrados separadamente.');return;
   }
   void runRpc('manage_used_settlement',{p_settlement_id:s.id,p_action:d.action,p_amount_cents:value,p_reason:d.reason||null},'Acerto atualizado com registro de auditoria.');
  });
@@ -1103,20 +1141,22 @@ function openBatch(){
   const b=battery(s.battery_id),old=remaining(s);
   return '<div class="batch-item" data-settle-item="'+s.id+'"><div class="batch-item-head"><div><strong>'+esc(batteryDisplay(b))+'</strong><div class="cell-sub">Pendente: '+brl(old)+' · Pago antes: '+brl(s.paid_cents)+'</div></div>'+statusBadge('Selecionada','yellow')+'</div><div class="batch-item-fields">'+
   field('Novo valor total para Sandro','owed','number',fromCents(s.owed_cents),'min="0.01" step="0.01" required')+
-  field('Recebido agora (R$)','paid','number',fromCents(old),'min="0" step="0.01" required')+
+  field('Dinheiro recebido agora (R$)','paid','number',fromCents(old),'min="0" step="0.01" required')+
+  field('Desconto de vale (R$)','vale','number','0.00','min="0" max="'+fromCents(availableVales())+'" step="0.01" required')+
   '<label class="field wide"><span><input type="checkbox" name="waive" style="width:auto;min-height:0;vertical-align:middle"> Dispensar eventual saldo restante</span></label>'+
   field('Motivo de ajuste/dispensa','reason','text','','maxlength="400" class="wide"')+'</div></div>';
  }).join('');
  const body='<div class="note">Este acerto será feito em <b>um único lote</b>. Se qualquer bateria falhar, nada será pago. Cada item terá data/hora e auditoria.</div>'+
  '<form id="batch-form" style="margin-top:16px">'+
- '<div class="batch-list">'+items+'</div><div class="batch-total"><span>Recebimento agora</span><strong id="batch-total">'+brl(ss.reduce((a,s)=>a+remaining(s),0))+'</strong></div>'+
+ '<div class="note">Vales disponíveis: <b>'+brl(availableVales())+'</b>. Informe quanto usar por bateria.</div><div class="batch-list">'+items+'</div><div class="batch-total"><span>Dinheiro recebido agora</span><strong id="batch-total">'+brl(ss.reduce((a,s)=>a+remaining(s),0))+'</strong></div><div class="batch-total"><span>Vales descontados</span><strong id="batch-vale-total">'+brl(0)+'</strong></div>'+
  '<div class="field-grid">'+selectField('Recebimento','method',[['pix','PIX'],['cash','Dinheiro'],['transfer','Transferência'],['other','Outro']],'pix')+
  field('Referência do pagamento','reference','text','','maxlength="150"')+
  '<label class="field wide"><span>Observação geral</span><textarea name="notes" maxlength="500"></textarea></label></div></form>';
  modal('Acertar '+ss.length+' bateria(s)',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="batch-form">✓ Confirmar lote</button>');
- $('#batch-form').addEventListener('input',()=>{
-  let sum=0;for(const item of $$('[data-settle-item]')){const v=Number($('[name=paid]',item).value);if(Number.isFinite(v)&&v>=0)sum+=Math.round(v*100);}
-  $('#batch-total').textContent=brl(sum);
+ $('#batch-form').addEventListener('input',e=>{
+  if(e.target.name==='vale'){const el=e.target.closest('[data-settle-item]');const st=rows.settlements.find(x=>x.id===el.dataset.settleItem);const v=Number(e.target.value),owed=Number($('[name=owed]',el).value);if(Number.isFinite(v)&&v>=0&&Number.isFinite(owed))$('[name=paid]',el).value=fromCents(Math.max(0,Math.round(owed*100)-Number(st.paid_cents)-Number(st.waived_cents)-Math.round(v*100)));}
+  let sum=0,vales=0;for(const item of $('[data-settle-item]')){const v=Number($('[name=paid]',item).value),w=Number($('[name=vale]',item).value);if(Number.isFinite(v)&&v>=0)sum+=Math.round(v*100);if(Number.isFinite(w)&&w>=0)vales+=Math.round(w*100);}
+  $('#batch-total').textContent=brl(sum);$('#batch-vale-total').textContent=brl(vales);
  });
  $('#batch-form').addEventListener('submit',e=>{
   e.preventDefault();
@@ -1126,18 +1166,21 @@ function openBatch(){
    const old=rows.settlements.find(s=>s.id===id);
    const owed=cents($('[name=owed]',el).value);
    const paid=cents($('[name=paid]',el).value);
+   const vale=cents($('[name=vale]',el).value);
    const waive=$('[name=waive]',el).checked;
    const reason=$('[name=reason]',el).value.trim();
    if(owed!==Number(old.owed_cents)||waive){if(reason.length<5)throw new Error('Informe o motivo do ajuste/dispensa em cada bateria.');}
-   const rest=owed-Number(old.paid_cents)-Number(old.waived_cents)-paid;
+   const rest=owed-Number(old.paid_cents)-Number(old.waived_cents)-paid-vale;
    if(rest<0)throw new Error('Pagamento maior que o saldo da bateria.');
    if(rest>0&&!waive)throw new Error('O lote deve quitar totalmente cada bateria. Marque dispensa para o restante, ou altere o valor pago.');
-   return {settlement_id:id,new_owed_cents:owed,paid_now_cents:paid,waive_remaining:waive,reason};
+   return {settlement_id:id,new_owed_cents:owed,paid_now_cents:paid,vale_cents:vale,waive_remaining:waive,reason};
   });}catch(err){toast(explain(err),'error');return;}
   const d=Object.fromEntries(new FormData(e.currentTarget));
   const sum=itemsOut.reduce((a,x)=>a+x.paid_now_cents,0);
-  if(!confirm('Confirmar o recebimento de '+brl(sum)+' para '+itemsOut.length+' bateria(s)? Esta ação ficará registrada.'))return;
-  void runRpc('settle_used_batteries_batch',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
+  const valeSum=itemsOut.reduce((a,x)=>a+x.vale_cents,0);
+  if(valeSum>availableVales())return toast('O desconto supera o saldo dos vales.','error');
+  if(!confirm('Confirmar '+brl(sum)+' recebidos e '+brl(valeSum)+' em vales para '+itemsOut.length+' bateria(s)?'))return;
+  void runRpc('settle_used_batteries_with_vales',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
  });
 }
 function openExpense(x=null,historical=false){
