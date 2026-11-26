@@ -95,6 +95,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/019_cancel_and_period_reports.sql
       - name: Testar exclusao auditada e relatorios diario mensal anual
         run: psql -v ON_ERROR_STOP=1 -f tests/cancel-period-integration.sql
+      - name: Atualizar permissoes e notificacoes compartilhadas
+        run: psql -v ON_ERROR_STOP=1 -f supabase/020_shared_sales_roles_notifications.sql
+      - name: Verificar Sandro e WS editando e recebendo notificacoes
+        run: psql -v ON_ERROR_STOP=1 -f tests/shared-sales-workflow.sql
 
   browser:
     name: Navegador real no celular e no PC
