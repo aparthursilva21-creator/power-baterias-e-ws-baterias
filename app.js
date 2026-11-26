@@ -435,7 +435,7 @@ function dashboardView() {
  const desc=role==='power'?'Confira vendas, corrija informações e acompanhe os repasses.':
    role==='ws'?'Registre as vendas da WS e acompanhe os acertos com a Power.':
    'Visão compartilhada da parceria.';
- const primary=role==='power'?button('Ver e corrigir vendas','sales'):
+ const primary=role==='power'?button('Ver e editar vendas','sales'):
    role==='ws'?button('+ Registrar uma venda','new-sale'):button('Conferir vendas','sales');
  return heading('Olá, '+name,desc,primary)+
   '<div class="stat-grid stat-grid-simple">'+
@@ -454,7 +454,11 @@ function dashboardView() {
     button('Ver todas','sales','secondary tiny'))+
   panel('Acertos a conferir','<div class="panel-body lined-list">'+pendingHtml+'</div>',
     button('Abrir acertos','settlements','secondary tiny'))+'</div>'+
-  '<div class="home-help">As vendas são lançadas pela WS. Sandro e Wanderson podem corrigir ou cancelar, '+
+  (rows.financialReviews.some(x=>x.status==='pending')?
+   '<div class="note warn">Existem acertos de vendas canceladas que precisam de conferência. '+
+    (canPay()?'<button class="btn tiny secondary" data-act="settlements">Abrir acertos</button>':
+      'O Sandro precisa conferir o financeiro.')+'</div>':'')+
+ '<div class="home-help">As vendas são lançadas pela WS. Sandro e Wanderson podem corrigir ou cancelar, '+
   'com motivo registrado no histórico e aviso aos dois. Para receber alertas fora do site, '+
   'abra <strong>Notificações</strong> e ative os avisos neste celular.</div>';
 }
@@ -528,6 +532,33 @@ function salesView(){
 }
 function settlementView() {
  const pending=rows.settlements.filter(x=>remaining(x)>0);
+ const openReviews=rows.financialReviews.filter(x=>x.status==='pending');
+ const recentReviews=rows.financialReviews.filter(x=>x.status==='resolved').slice(0,5);
+ const reviewRow=r=>{
+  const revision=rows.saleRevisions.find(x=>x.sale_id===r.sale_id&&x.action==='cancelled');
+  const original=revision?.before_data?.sale;
+  const bat=original?battery(original.battery_id):null;
+  return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(bat))+
+   '</strong><small>Cliente: '+esc(original?.customer_name||'—')+
+   ' · Cancelada: '+stamp(r.created_at)+'</small>'+
+   '<small>Pagamento anterior: '+brl(r.paid_at_cancellation_cents)+
+   ' · Dispensa: '+brl(r.waived_at_cancellation_cents)+
+   (r.batch_related?' · Acerto em lote':'')+'</small></div>'+
+   (r.status==='pending'?(canPay()?
+    '<button type="button" class="btn tiny secondary" data-act="resolve-financial-review" data-id="'+r.id+'">Conferir</button>':
+    statusBadge('Aguardando Sandro','yellow')):statusBadge('Conferido','green'))+'</div>';
+ };
+ const reviewsPanel=(openReviews.length||recentReviews.length)?
+   panel('Conciliação de vendas canceladas',
+     '<div class="panel-body lined-list">'+
+     (openReviews.length?
+       '<div class="note warn">Há '+openReviews.length+
+       ' acerto(s) de venda cancelada aguardando conferência. Os pagamentos antigos continuam no histórico.</div>'+
+       openReviews.map(reviewRow).join(''):
+       '<div class="note success">Nenhuma conciliação pendente.</div>')+
+     (recentReviews.length?'<details class="simple-details"><summary>Conferências anteriores</summary>'+
+       recentReviews.map(reviewRow).join('')+'</details>':'')+'</div>'):'';
+
  const total=pending.reduce((a,x)=>a+remaining(x),0);
  const rowsHtml=rows.settlements.map(s=>{
   const b=battery(s.battery_id),sale=saleFor(s.battery_id),sts=settlingStatus(s);
@@ -538,6 +569,7 @@ function settlementView() {
  const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto em lote</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(x.total_paid_cents)+'</strong><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
  return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?'<div class="btn-row">'+button('✓ Acertar selecionadas','batch-settle')+(pending.length?button('🔔 Cobrar WS','remind-ws','secondary'):'')+'</div>':'')+
  '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+Number(s.paid_cents),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
+ reviewsPanel+
  panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Já pago','Falta','Situação',''],rowsHtml))+
  panel('Últimos acertos em lote','<div class="panel-body lined-list">'+batchesHtml+'</div>')+
  '<div class="note">Apenas Sandro ou administrador podem confirmar pagamentos, corrigir valores ou dispensar cobrança. Cada alteração fica no histórico.</div>';
@@ -628,6 +660,9 @@ function reportSummary(r,period=reportWindow()){
  '<div class="panel-body lined-list">'+
  line('Total devido à Power por vendas no período',brl(r.power_repasse_sales_month_cents))+
  line('Pagamentos recebidos pela Power no período',brl(r.power_received_in_month_cents))+
+ line('Desses, referentes a vendas canceladas',brl(r.power_cancelled_receipts_in_period_cents))+
+ line('Conciliações pendentes hoje',String(r.financial_reviews_pending_count||0))+
+ line('Valor de pagamentos a conferir',brl(r.financial_reviews_pending_paid_cents))+
  line('Vendas do período com acerto encerrado',String(r.fully_settled_sales_in_month))+
  (showWS?line('Recuperação de baterias vendidas no período',brl(r.recovery_cost_sales_month_cents))+
  line('Despesas da WS no período',brl(r.ws_expenses_cents))+
@@ -668,9 +703,18 @@ function activityView(){
           ' · Valor: '+brl(original.sale_price_cents)+
           ' · Venda: '+stamp(original.sold_at)+' · ':'')+
         'Motivo: '+hideInternalBatteryCodes(x.reason)+
-        (x.action==='cancelled'?' · Registro preservado para auditoria':'')
+        (x.action==='cancelled'?' · Registro preservado para auditoria'+
+          (x.after_data?.financial_review?' · ACERTO ANTERIOR: '+
+           brl(x.after_data.financial_review.paid_at_cancellation_cents)+
+           ' · Conciliação aberta':''):'')
     };
   }),
+  ...rows.financialReviewEvents.map(x=>({
+    at:x.occurred_at,who:x.actor_id,category:'Conciliação',
+    description:x.event==='opened'?'Conferência financeira aberta':'Conferência financeira concluída',
+    detail:'Pagamento registrado: '+brl(x.after_data?.paid_at_cancellation_cents||0)+
+      ' · '+esc(x.reason||'')
+  })),
   ...rows.events.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Acerto',description:({created:'Criado',payment:'Pagamento',payment_correction:'Correção de pagamento',amount_adjustment:'Ajuste de valor',waiver:'Dispensa',reopen:'Reabertura'})[x.action]||x.action,detail:hideInternalBatteryCodes(x.reason)+' · Novo saldo: '+brl(Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents))})),
   ...rows.activity.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Bateria',description:({received:'Recebida',edited:'Atualizada',sold:'Vendida'})[x.action]||x.action,detail:hideInternalBatteryCodes(x.description)||''})),
   ...rows.powerExpenseEvents.map(x=>({
