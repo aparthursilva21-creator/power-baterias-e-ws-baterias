@@ -95,12 +95,28 @@ function summaryPages(p){
  texts.forEach((line,i)=>text(line,54,footerY+72+i*27,15,muted,550));
  return c.canvas;
 }
+function creditSummaryPage(p){
+ const c=pageHeader(p,'Créditos e vales do Wanderson',2);
+ const {rectangle,text,rule,blue,ink,muted}=c;
+ const r=p.summary,metrics=[
+ ['Créditos gerados no período',r.ws_credit_generated_cents],['Créditos usados no período',r.ws_credit_used_cents],
+ ['Vales registrados no período',r.ws_vales_registered_cents],['Vales descontados no período',r.ws_vales_applied_cents],
+ ['Crédito disponível hoje',r.ws_credit_balance_cents],['Vales disponíveis hoje',r.ws_vale_balance_cents],
+ ['Crédito menos vales (hoje)',r.ws_credit_minus_vales_cents]
+ ];
+ for(let i=0;i<metrics.length;i++){const x=54+(i%2)*454,y=270+Math.floor(i/2)*105;rectangle(x,y,436,88,'#f1f6fc');rectangle(x,y,5,88,blue);text(metrics[i][0],x+20,y+32,17,muted,650);text(money(metrics[i][1]),x+20,y+65,25,ink,850);}
+ rule(728);text('Como interpretar',54,764,20,ink,850);
+ text('O pagamento excedente vira crédito; seu uso não é um novo recebimento.',54,808,16,muted,550);
+ text('Créditos e vales são controlados separadamente. A diferença é informativa.',54,838,16,muted,550);
+ text('Os saldos atuais incluem movimentações de todos os períodos.',54,868,16,muted,550);
+ return c.canvas;
+}
 function tablePages(p,section,items){
  const perPage=19,all=[];
  const rows=items.length?items:[null];
  for(let start=0;start<rows.length;start+=perPage){
   const part=rows.slice(start,start+perPage);
-  const c=pageHeader(p,section,all.length+2);
+  const c=pageHeader(p,section,all.length+3);
   const {rectangle,text,rule,cut,navy,ink,muted,blue}=c;
   const isSale=section==='Vendas do período';
   const y0=255;
@@ -162,7 +178,7 @@ export async function downloadPeriodPDF(payload){
  if(!payload||!payload.summary||!payload.start||!payload.endInclusive)throw Error('Selecione e consulte o relatório antes de baixar.');
  const validRoles=['ws','power','admin'];
  if(!validRoles.includes(payload.role))throw Error('Perfil não autorizado para relatórios.');
- const canvases=[summaryPages(payload),...tablePages(payload,'Vendas do período',payload.sales||[])];
+ const canvases=[summaryPages(payload),creditSummaryPage(payload),...tablePages(payload,'Vendas do período',payload.sales||[])];
  if(payload.role!=='power')
   canvases.push(...tablePages(payload,'Despesas WS do período',payload.wsExpenses||[]));
  if(payload.role!=='ws')
