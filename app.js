@@ -106,13 +106,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt
 const stamp = s => s ? new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s)) : '—';
 const dateBR = s => s ? (/^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? String(s).slice(8,10)+'/'+String(s).slice(5,7)+'/'+String(s).slice(0,4) : new Intl.DateTimeFormat('pt-BR',{timeZone:BR_TIMEZONE,day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(s))) : '—';
 const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
-const canSell = () => role === 'ws' || role === 'admin';
-const canBackdateSale = () => ['ws','power','admin'].includes(role);
+const canSell = () => role === 'ws';
+const canBackdateSale = () => role === 'ws';
 const canCancelSale = s => !!s && !s.cancelled_at && ['ws','power','admin'].includes(role);
-const canEditSale = s => !!s && (
- role==='admin' || (role==='ws'&&s.sold_by===user?.id) ||
- (role==='power'&&s.is_historical&&s.recorded_by===user?.id)
-);
+const canEditSale = s => !!s && !s.cancelled_at && ['power','ws','admin'].includes(role);
 const canPay = () => role === 'power' || role === 'admin';
 const canExpense = () => ['ws','power','admin'].includes(role);
 const canViewWSExpenses=()=>role==='ws'||role==='admin';
@@ -275,9 +272,22 @@ async function resumeSaleDraft(){
 }
 
 function nav() {
-  const visible = MENU.filter(x => x[0] !== 'expenses' || canExpense());
-  const html=visible.map(x=>'<button class="nav-action'+(x[0]===current?' active':'')+'" data-view="'+x[0]+'" type="button" '+(x[0]===current?'aria-current="page"':'')+'><span class="nav-symbol" aria-hidden="true">'+x[1]+'</span><span>'+x[2]+'</span></button>').join('');
-  $('#side-nav').innerHTML=html; $('#bottom-nav').innerHTML=html;
+  const visible=MENU.filter(x=>x[0]!=='expenses'||canExpense());
+  const item=x=>'<button class="nav-action'+(x[0]===current?' active':'')+
+    '" data-view="'+x[0]+'" type="button" '+(x[0]===current?'aria-current="page"':'')+
+    '><span class="nav-symbol" aria-hidden="true">'+x[1]+'</span><span>'+x[2]+'</span></button>';
+  $('#side-nav').innerHTML=visible.map(item).join('');
+  // No celular só quatro áreas principais, sem barra horizontal interminável.
+  const major=new Set(['dashboard','sales','settlements','reports']);
+  const basic=visible.filter(x=>major.has(x[0]));
+  const extra=visible.filter(x=>!major.has(x[0]));
+  const wasOpen=$('#bottom-nav .nav-more')?.open||false;
+  const inExtras=extra.some(x=>x[0]===current);
+  $('#bottom-nav').innerHTML=basic.map(item).join('')+
+    '<details class="nav-more" '+(wasOpen?'open':'')+'>'+
+    '<summary class="nav-more-toggle'+(inExtras?' active':'')+'" aria-label="Mais opções">'+
+    '<span class="nav-symbol" aria-hidden="true">⋯</span><span>Mais</span></summary>'+
+    '<div class="nav-more-menu">'+extra.map(item).join('')+'</div></details>';
 }
 function setupError(msg) {
   ready=false;
@@ -304,6 +314,7 @@ async function boot(session) {
   // Eventos imediatos, com consulta periódica de segurança caso o WebSocket caia.
   liveChannel=api.channel('pbws-sync-' + user.id.slice(0,8))
     .on('postgres_changes',{event:'*',schema:'public',table:'used_battery_sales'},syncSoon)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'used_sale_revisions'},syncSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'used_batteries'},syncSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'used_battery_settlements'},syncSoon)
     .on('postgres_changes',{event:'*',schema:'public',table:'used_settlement_batches'},syncSoon)
@@ -398,24 +409,52 @@ function render() {
   $('#app-main').innerHTML='<div class="page-stack">'+fn()+'</div>';
 }
 function dashboardView() {
-  const nowMonth=monthKey(new Date());
-  const recent=rows.sales.filter(s=>monthKey(s.sold_at)===nowMonth);
-  const revenue=recent.reduce((a,s)=>a+Number(s.sale_price_cents),0);
-  const debt=rows.settlements.reduce((a,s)=>a+remaining(s),0);
-  const pending=rows.settlements.filter(s=>remaining(s)>0).length;
-  const salesHtml=rows.sales.slice(0,6).map(s=>{
-    const b=battery(s.battery_id), st=settleFor(s.battery_id), sts=settlingStatus(st);
-    return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(b))+'</strong><small>'+stamp(s.sold_at)+' · '+esc(s.customer_name)+'</small></div><div class="text-right"><strong>'+brl(s.sale_price_cents)+'</strong><div style="margin-top:7px">'+statusBadge(sts[0],sts[1])+'</div></div></div>';
-  }).join('')||'<div class="empty">Ainda não há vendas.</div>';
-  const pendingHtml=rows.settlements.filter(s=>remaining(s)>0).slice(0,5).map(s=>{
-    const b=battery(s.battery_id);
-    return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(b))+'</strong><small>'+esc(saleFor(s.battery_id)?.customer_name||'Cliente não informado')+'</small></div><strong class="accent">'+brl(remaining(s))+'</strong></div>';
-  }).join('')||'<div class="empty">Nenhum acerto pendente.</div>';
-  return heading('Visão geral','Tudo o que acontece na operação fica registrado e sincronizado.',button('↻ Atualizar','refresh','secondary'))+
-  '<div class="stat-grid">'+stat('Vendas deste mês',brl(revenue),true)+stat('Vendas realizadas no mês',String(recent.length))+stat('Acertos pendentes',brl(debt),true)+stat('Baterias aguardando acerto',String(pending))+'</div>'+
-  '<div class="grid-2">'+panel('Vendas recentes','<div class="panel-body lined-list">'+salesHtml+'</div>',button('Ver vendas','sales','secondary tiny'))+
-  panel('A receber · Power','<div class="panel-body lined-list">'+pendingHtml+'</div>',button('Abrir acertos','settlements','secondary tiny'))+'</div>'+
-  '<div class="note">Os valores financeiros e horários são consultados no banco Supabase. Horários exibidos em Brasília (UTC−3). '+(canPay()?'Você pode conciliar pagamentos.':'O Sandro controla e confirma os repasses.')+'</div>';
+ const nowMonth=monthKey(new Date());
+ const nowDay=dayKey(new Date());
+ const monthSales=rows.sales.filter(s=>monthKey(s.sold_at)===nowMonth);
+ const daySales=rows.sales.filter(s=>dayKey(s.sold_at)===nowDay);
+ const revenue=monthSales.reduce((a,s)=>a+Number(s.sale_price_cents),0);
+ const debt=rows.settlements.reduce((a,s)=>a+remaining(s),0);
+ const pending=rows.settlements.filter(s=>remaining(s)>0);
+ const salesHtml=rows.sales.slice(0,5).map(s=>{
+   const b=battery(s.battery_id),st=settleFor(s.battery_id),status=settlingStatus(st);
+   return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(b))+'</strong>'+
+    '<small>'+stamp(s.sold_at)+' · '+esc(s.customer_name)+'</small></div>'+
+    '<div class="text-right"><strong>'+brl(s.sale_price_cents)+'</strong>'+
+    '<small>'+statusBadge(status[0],status[1])+'</small></div></div>';
+ }).join('')||'<div class="empty">Nenhuma venda registrada.</div>';
+ const pendingHtml=pending.slice(0,5).map(st=>{
+   const b=battery(st.battery_id);
+   return '<div class="list-entry"><div><strong>'+esc(batteryDisplay(b))+
+     '</strong><small>'+esc(saleFor(st.battery_id)?.customer_name||'Cliente não informado')+
+     '</small></div><strong>'+brl(remaining(st))+'</strong></div>';
+ }).join('')||'<div class="empty">Nenhum acerto pendente.</div>';
+ const name=role==='power'?'Sandro':role==='ws'?'Wanderson':'Arthur';
+ const desc=role==='power'?'Confira vendas, corrija informações e acompanhe os repasses.':
+   role==='ws'?'Registre as vendas da WS e acompanhe os acertos com a Power.':
+   'Visão compartilhada da parceria.';
+ const primary=role==='power'?button('Ver e corrigir vendas','sales'):
+   role==='ws'?button('+ Registrar uma venda','new-sale'):button('Conferir vendas','sales');
+ return heading('Olá, '+name,desc,primary)+
+  '<div class="stat-grid stat-grid-simple">'+
+  stat('Acertos ainda pendentes',brl(debt),true)+
+  stat('Vendas de hoje',String(daySales.length))+
+  stat('Vendas neste mês',brl(revenue))+'</div>'+
+  '<div class="home-shortcuts">'+
+  '<div><strong>O que você precisa fazer?</strong><span>Atalhos para as tarefas do dia.</span></div>'+
+  '<div class="btn-row">'+
+  button('Conferir vendas','sales','secondary')+
+  (canPay()?button('Gerenciar acertos','settlements','secondary'):'')+
+  button('Abrir notificações','open-notifications','secondary')+
+  '</div></div>'+
+  '<div class="grid-2">'+
+  panel('Últimas vendas','<div class="panel-body lined-list">'+salesHtml+'</div>',
+    button('Ver todas','sales','secondary tiny'))+
+  panel('Acertos a conferir','<div class="panel-body lined-list">'+pendingHtml+'</div>',
+    button('Abrir acertos','settlements','secondary tiny'))+'</div>'+
+  '<div class="home-help">As vendas são lançadas pela WS. Sandro e Wanderson podem corrigir ou cancelar, '+
+  'com motivo registrado no histórico e aviso aos dois. Para receber alertas fora do site, '+
+  'abra <strong>Notificações</strong> e ative os avisos neste celular.</div>';
 }
 function canMakeWSReceipt(s){
  return !!s && !s.cancelled_at && ['ws','power','admin'].includes(role);
@@ -478,12 +517,12 @@ function salesView(){
  (dateRevision?'<div style="margin-top:4px">'+statusBadge('Data/hora corrigida','yellow')+'</div>':'')+
  '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td><td>'+esc(batteryDisplay(b))+'<div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Bateria vendida')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+allActions+'</td></tr>';
  }).join('');
- return heading('Vendas','Cada venda aparece no mês em que aconteceu, mesmo quando cadastrada depois.',
+ return heading('Vendas','Wanderson registra. Sandro e Wanderson podem corrigir ou cancelar, sempre com motivo e histórico.',
  '<div class="btn-row">'+
  (canSell()?button('+ Venda de hoje','new-sale'):'')+
  (canBackdateSale()?button('◷ Lançar venda antiga','new-historical-sale','secondary'):'')+
  '</div>')+
- panel('Histórico de vendas',tbl(['Data da venda / Cadastro','Bateria','Cliente','Venda','Garantia','Acerto','Ações'],content));
+ '<div class="sales-layout">'+panel('Vendas registradas',tbl(['Data da venda / Cadastro','Bateria','Cliente','Venda','Garantia','Acerto','Ações'],content))+'</div>';
 }
 function settlementView() {
  const pending=rows.settlements.filter(x=>remaining(x)>0);
@@ -689,6 +728,7 @@ document.addEventListener('click',async e=>{
  try {
   if(act==='refresh')await loadAll(true);
   if(act==='new-sale')openSale();
+  if(act==='open-notifications')$('#pbws-bell')?.click();
   if(act==='discard-sale-draft')await discardSaleDraft();
   if(act==='ws-receipt')await openWSReceiptById(btn.dataset.id);
   if(act==='new-historical-sale')openSale(true);
