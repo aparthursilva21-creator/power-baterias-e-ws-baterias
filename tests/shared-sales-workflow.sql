@@ -12,8 +12,10 @@ begin
  perform set_config('request.jwt.claim.sub',v_ws::text,true);
  select count(*) into v_before from public.pbws_notifications
  where recipient_id=v_ws and title='Nova venda registrada';
+ perform set_config('request.jwt.claim.sub',v_power::text,true);
  select count(*) into v_power_before from public.pbws_notifications
  where recipient_id=v_power and title='Nova venda registrada';
+ perform set_config('request.jwt.claim.sub',v_ws::text,true);
  v_sale:=public.register_direct_battery_sale(
    p_request_id=>'20260200-0000-4000-8000-000000000001'::uuid,
    p_brand=>'Moura',p_model=>'60Ah',p_transfer_price_cents=>6000,
@@ -23,12 +25,14 @@ begin
  select count(*) into v_n from public.pbws_notifications
  where recipient_id=v_ws and title='Nova venda registrada';
  if v_n<>v_before+1 then raise exception 'Venda nao notificou a propria WS';end if;
+ perform set_config('request.jwt.claim.sub',v_power::text,true);
  select count(*) into v_n from public.pbws_notifications
  where recipient_id=v_power and title='Nova venda registrada';
  if v_n<>v_power_before+1 then
   raise exception 'Nova venda nao notificou Sandro: anterior %, atual %',
     v_power_before,v_n;
  end if;
+ perform set_config('request.jwt.claim.sub',v_ws::text,true);
  select sold_at,sold_by into v_original,v_actor from public.used_battery_sales where id=v_sale;
 
  -- Quem corrige é Sandro, mesmo que o lançamento tenha sido feito pelo Wanderson.
@@ -47,6 +51,7 @@ begin
  select count(*) into v_n from public.pbws_notifications where recipient_id=v_ws
    and title='Venda corrigida' and created_at>now()-interval '3 minutes';
  if v_n<1 then raise exception 'WS nao recebeu aviso da edicao do Sandro';end if;
+ perform set_config('request.jwt.claim.sub',v_power::text,true);
  select count(*) into v_n from public.pbws_notifications where recipient_id=v_power
    and title='Venda corrigida' and created_at>now()-interval '3 minutes';
  if v_n<1 then raise exception 'Sandro nao recebeu confirmacao no proprio celular';end if;
@@ -101,6 +106,7 @@ begin
  select count(*) into v_n from public.pbws_notifications
  where recipient_id=v_ws and title='Venda cancelada' and created_at>now()-interval '3 minutes';
  if v_n<1 then raise exception 'WS nao recebeu cancelamento';end if;
+ perform set_config('request.jwt.claim.sub',v_power::text,true);
  select count(*) into v_n from public.pbws_notifications
  where recipient_id=v_power and title='Venda cancelada' and created_at>now()-interval '3 minutes';
  if v_n<1 then raise exception 'Power nao recebeu confirmacao do cancelamento';end if;
