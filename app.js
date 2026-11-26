@@ -1,6 +1,6 @@
 import {receiptHTML,downloadReceipt,shareReceipt,soldBatteryName} from './ws-receipt.js?v=3';
 import {SaleDraftStore,SALE_DRAFT_MINUTES} from './sale-drafts.js?v=1';
-import {downloadPeriodPDF} from './report-pdf.js?v=3';
+import {downloadPeriodPDF} from './report-pdf.js?v=4';
 
 /* Power Baterias × WS Baterias
    Operação remota: Supabase Auth + RLS + funções SQL transacionais.
@@ -1115,6 +1115,8 @@ function openSettlement(s) {
  selectField('Operação','action',opts,remaining(s)?'payment':'adjust_owed','id="settlement-action"')+
  field('Valor da operação / dinheiro recebido (R$)','amount','number',fromCents(remaining(s)),'step="0.01" min="0"')+
  '<div id="single-vale-field" '+(remaining(s)?'':'hidden')+'>'+field('Desconto de vale (R$)','vale','number','0.00','step="0.01" min="0" max="'+fromCents(Math.min(remaining(s),availableVales()))+'"')+'<small>Disponível: '+brl(availableVales())+'</small></div>'+
+ '<div id="single-credit-field" '+(remaining(s)?'':'hidden')+'>'+field('Usar crédito (R$)','credit','number','0.00','step="0.01" min="0" max="'+fromCents(Math.min(remaining(s),creditBalance()))+'"')+'<small>Crédito disponível: '+brl(creditBalance())+' · Deixe 0 para guardar.</small></div>'+
+ '<div id="single-credit-preview" class="note wide" '+(remaining(s)?'':'hidden')+'></div>'+
  '<label class="field wide"><span>Justificativa (obrigatória para correção, edição e dispensa)</span><textarea name="reason" maxlength="400"></textarea></label></form>'+
  '<div class="note warn" style="margin-top:15px">Correção de pagamento permite valor negativo (ex.: -10,00 para diminuir o pago). Para dispensar ou reabrir, o valor é ignorado. Toda mudança deixa registro de data, hora e responsável.</div>';
  modal('Gerenciar acerto',body,'<button class="btn secondary" type="button" data-modal-close>Cancelar</button><button class="btn" type="submit" form="settlement-form">Confirmar alteração</button>');
@@ -1123,12 +1125,21 @@ function openSettlement(s) {
   const amount=$('#settlement-form [name=amount]');
   amount.disabled=['waive','reopen'].includes(action.value);
   $('#single-vale-field').hidden=action.value!=='payment';
+  $('#single-credit-field').hidden=action.value!=='payment';$('#single-credit-preview').hidden=action.value!=='payment';
+  $('#settlement-form [name=credit]').value='0.00';
   $('#settlement-form [name=vale]').value='0.00';
   amount.min=action.value==='correct_paid'?'':action.value==='adjust_owed'?'0.01':'0';
   if(action.value==='adjust_owed')amount.value=fromCents(s.owed_cents);
   if(action.value==='payment')amount.value=fromCents(remaining(s));
+  previewSingle();
  });
- $('#settlement-form [name=vale]').addEventListener('input',e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&n>=0)$('#settlement-form [name=amount]').value=fromCents(Math.max(0,remaining(s)-Math.round(n*100)));});
+ const singleForm=$('#settlement-form');
+ function readMoney(name){const n=Number(singleForm.elements[name].value);return Number.isFinite(n)&&n>=0?Math.round(n*100):0;}
+ function previewSingle(){if(action.value!=='payment')return;const cash=readMoney('amount'),vale=readMoney('vale'),credit=readMoney('credit'),due=remaining(s);
+ const extra=Math.max(0,cash+vale+credit-due),left=Math.max(0,due-cash-vale-credit);
+ $('#single-credit-preview').textContent='Recebido: '+brl(cash)+' · Vale: '+brl(vale)+' · Crédito usado: '+brl(credit)+' · Crédito novo: '+brl(extra)+' · Falta: '+brl(left);}
+ singleForm.addEventListener('input',e=>{if(['vale','credit'].includes(e.target.name))singleForm.elements.amount.value=fromCents(Math.max(0,remaining(s)-readMoney('vale')-readMoney('credit')));previewSingle();});
+ previewSingle();
  $('#settlement-form').addEventListener('submit',e=>{
   e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));
   if(['adjust_owed','waive','correct_paid','reopen'].includes(d.action)&&d.reason.trim().length<5) return toast('Informe a justificativa com pelo menos 5 caracteres.','error');
@@ -1141,9 +1152,12 @@ function openSettlement(s) {
    }else value=cents(d.amount);
   }
   if(d.action==='payment'){
-   let v;try{v=cents(d.vale||'0');}catch(err){return toast(explain(err),'error');}
-   if(v>availableVales()||value+v>remaining(s)||value+v<=0)return toast('Confira o dinheiro recebido, o saldo da bateria e os vales disponíveis.','error');
-   void runRpc('pay_used_settlement_with_vale',{p_settlement_id:s.id,p_cash_cents:value,p_vale_cents:v,p_reason:d.reason||null},'Acerto atualizado. Dinheiro e vale registrados separadamente.');return;
+   let v,c;try{v=cents(d.vale||'0');c=cents(d.credit||'0');}catch(err){return toast(explain(err),'error');}
+   if(v>availableVales()||c>creditBalance()||v+c>remaining(s)||value+v+c<=0)return toast('Confira os descontos e os saldos disponíveis.','error');
+   const extra=Math.max(0,value+v+c-remaining(s));
+   if(extra&&c)return toast('Se há pagamento a mais, deixe o crédito usado em zero.','error');
+   if(extra&&!confirm('Confirmar pagamento e guardar '+brl(extra)+' de crédito para Wanderson?'))return;
+   void runRpc('pay_used_settlement_with_credit',{p_settlement_id:s.id,p_cash_cents:value,p_vale_cents:v,p_credit_cents:c,p_reason:d.reason||null},extra?'Acerto confirmado. Crédito de '+brl(extra)+' registrado.':'Acerto atualizado. Dinheiro, vale e crédito registrados.');return;
   }
   void runRpc('manage_used_settlement',{p_settlement_id:s.id,p_action:d.action,p_amount_cents:value,p_reason:d.reason||null},'Acerto atualizado com registro de auditoria.');
  });
@@ -1179,20 +1193,23 @@ function openBatch(){
   field('Novo valor total para Sandro','owed','number',fromCents(s.owed_cents),'min="0.01" step="0.01" required')+
   field('Dinheiro recebido agora (R$)','paid','number',fromCents(old),'min="0" step="0.01" required')+
   field('Desconto de vale (R$)','vale','number','0.00','min="0" max="'+fromCents(availableVales())+'" step="0.01" required')+
+  field('Usar crédito (R$)','credit','number','0.00','min="0" max="'+fromCents(creditBalance())+'" step="0.01" required')+
   '<label class="field wide"><span><input type="checkbox" name="waive" style="width:auto;min-height:0;vertical-align:middle"> Dispensar eventual saldo restante</span></label>'+
   field('Motivo de ajuste/dispensa','reason','text','','maxlength="400" class="wide"')+'</div></div>';
  }).join('');
  const body='<div class="note">Este acerto será feito em <b>um único lote</b>. Se qualquer bateria falhar, nada será pago. Cada item terá data/hora e auditoria.</div>'+
  '<form id="batch-form" style="margin-top:16px">'+
- '<div class="note">Vales disponíveis: <b>'+brl(availableVales())+'</b>. Informe quanto usar por bateria.</div><div class="batch-list">'+items+'</div><div class="batch-total"><span>Dinheiro recebido agora</span><strong id="batch-total">'+brl(ss.reduce((a,s)=>a+remaining(s),0))+'</strong></div><div class="batch-total"><span>Vales descontados</span><strong id="batch-vale-total">'+brl(0)+'</strong></div>'+
+ '<div class="note">Vales disponíveis: <b>'+brl(availableVales())+'</b>. Crédito disponível: <b>'+brl(creditBalance())+'</b>. Deixe o crédito em zero para guardar.</div><div class="batch-list">'+items+'</div><div class="batch-total"><span>Dinheiro recebido agora</span><strong id="batch-total">'+brl(ss.reduce((a,s)=>a+remaining(s),0))+'</strong></div><div class="batch-total"><span>Vales descontados</span><strong id="batch-vale-total">'+brl(0)+'</strong></div>'+
+ '<div class="batch-total"><span>Crédito usado</span><strong id="batch-credit-used">'+brl(0)+'</strong></div><div class="batch-total"><span>Crédito novo</span><strong id="batch-credit-new">'+brl(0)+'</strong></div>'+
  '<div class="field-grid">'+selectField('Recebimento','method',[['pix','PIX'],['cash','Dinheiro'],['transfer','Transferência'],['other','Outro']],'pix')+
  field('Referência do pagamento','reference','text','','maxlength="150"')+
  '<label class="field wide"><span>Observação geral</span><textarea name="notes" maxlength="500"></textarea></label></div></form>';
  modal('Acertar '+ss.length+' bateria(s)',body,'<button type="button" class="btn secondary" data-modal-close>Cancelar</button><button type="submit" class="btn" form="batch-form">✓ Confirmar lote</button>');
+ const readBatch=(el,name)=>{const n=Number($('[name='+name+']',el).value);return Number.isFinite(n)&&n>=0?Math.round(n*100):0;};
  $('#batch-form').addEventListener('input',e=>{
-  if(e.target.name==='vale'){const el=e.target.closest('[data-settle-item]');const st=rows.settlements.find(x=>x.id===el.dataset.settleItem);const v=Number(e.target.value),owed=Number($('[name=owed]',el).value);if(Number.isFinite(v)&&v>=0&&Number.isFinite(owed))$('[name=paid]',el).value=fromCents(Math.max(0,Math.round(owed*100)-Number(st.paid_cents)-Number(st.waived_cents)-Math.round(v*100)));}
-  let sum=0,vales=0;for(const item of $('[data-settle-item]')){const v=Number($('[name=paid]',item).value),w=Number($('[name=vale]',item).value);if(Number.isFinite(v)&&v>=0)sum+=Math.round(v*100);if(Number.isFinite(w)&&w>=0)vales+=Math.round(w*100);}
-  $('#batch-total').textContent=brl(sum);$('#batch-vale-total').textContent=brl(vales);
+  if(['vale','credit'].includes(e.target.name)){const el=e.target.closest('[data-settle-item]'),st=rows.settlements.find(x=>x.id===el.dataset.settleItem);$('[name=paid]',el).value=fromCents(Math.max(0,readBatch(el,'owed')-Number(st.paid_cents)-Number(st.waived_cents)-readBatch(el,'vale')-readBatch(el,'credit')));}
+  let sum=0,vales=0,used=0,generated=0;for(const el of $$('[data-settle-item]')){const st=rows.settlements.find(x=>x.id===el.dataset.settleItem),cash=readBatch(el,'paid'),v=readBatch(el,'vale'),c=readBatch(el,'credit'),due=readBatch(el,'owed')-Number(st.paid_cents)-Number(st.waived_cents);sum+=cash;vales+=v;used+=c;generated+=Math.max(0,cash+v+c-due);}
+  $('#batch-total').textContent=brl(sum);$('#batch-vale-total').textContent=brl(vales);$('#batch-credit-used').textContent=brl(used);$('#batch-credit-new').textContent=brl(generated);
  });
  $('#batch-form').addEventListener('submit',e=>{
   e.preventDefault();
@@ -1203,20 +1220,25 @@ function openBatch(){
    const owed=cents($('[name=owed]',el).value);
    const paid=cents($('[name=paid]',el).value);
    const vale=cents($('[name=vale]',el).value);
+   const credit=cents($('[name=credit]',el).value);
    const waive=$('[name=waive]',el).checked;
    const reason=$('[name=reason]',el).value.trim();
    if(owed!==Number(old.owed_cents)||waive){if(reason.length<5)throw new Error('Informe o motivo do ajuste/dispensa em cada bateria.');}
-   const rest=owed-Number(old.paid_cents)-Number(old.waived_cents)-paid-vale;
-   if(rest<0)throw new Error('Pagamento maior que o saldo da bateria.');
+   const due=owed-Number(old.paid_cents)-Number(old.waived_cents);
+   if(vale+credit>due)throw new Error('Descontos acima do saldo da bateria.');
+   const rest=due-paid-vale-credit;
+   if(rest<0&&credit)throw new Error('Não use crédito na bateria que gera crédito novo.');
    if(rest>0&&!waive)throw new Error('O lote deve quitar totalmente cada bateria. Marque dispensa para o restante, ou altere o valor pago.');
-   return {settlement_id:id,new_owed_cents:owed,paid_now_cents:paid,vale_cents:vale,waive_remaining:waive,reason};
+   return {settlement_id:id,new_owed_cents:owed,paid_now_cents:paid,vale_cents:vale,credit_cents:credit,waive_remaining:waive,reason};
   });}catch(err){toast(explain(err),'error');return;}
   const d=Object.fromEntries(new FormData(e.currentTarget));
   const sum=itemsOut.reduce((a,x)=>a+x.paid_now_cents,0);
   const valeSum=itemsOut.reduce((a,x)=>a+x.vale_cents,0);
   if(valeSum>availableVales())return toast('O desconto supera o saldo dos vales.','error');
-  if(!confirm('Confirmar '+brl(sum)+' recebidos e '+brl(valeSum)+' em vales para '+itemsOut.length+' bateria(s)?'))return;
-  void runRpc('settle_used_batteries_with_vales',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
+  const creditUsed=itemsOut.reduce((a,x)=>a+x.credit_cents,0),creditNew=itemsOut.reduce((a,x)=>{const st=rows.settlements.find(y=>y.id===x.settlement_id);return a+Math.max(0,x.paid_now_cents+x.vale_cents+x.credit_cents-x.new_owed_cents+Number(st.paid_cents)+Number(st.waived_cents));},0);
+  if(creditUsed>creditBalance())return toast('O crédito usado supera o saldo disponível.','error');
+  if(!confirm('Confirmar '+brl(sum)+' recebidos · vales '+brl(valeSum)+' · crédito usado '+brl(creditUsed)+' · crédito novo '+brl(creditNew)+'?'))return;
+  void runRpc('settle_used_batteries_with_credit',{p_items:itemsOut,p_payment_method:d.method,p_reference:d.reference||null,p_notes:d.notes||null},'Acerto em lote confirmado e registrado no histórico.');
  });
 }
 function openExpense(x=null,historical=false){
