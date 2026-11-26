@@ -27,6 +27,22 @@ const exe=[process.env.CHROME_BIN,'/usr/bin/google-chrome','/usr/bin/chromium'].
 if(!exe){server.close();throw Error('Chrome não encontrado no ambiente de testes');}
 const browser=await chromium.launch({executablePath:exe,headless:true,args:['--no-sandbox']});
 const failures=[];
+async function navigate(page,side,view){
+ if(side==='#bottom-nav'&&['expenses','warranties','activity'].includes(view)){
+  await page.locator('#bottom-nav .nav-more summary').click();
+ }
+ await page.locator(side+' [data-view="'+view+'"]').click();
+}
+async function switchRole(page,next){
+ await page.evaluate(role=>{
+  window.pbwsSession.role=role;
+  window.dispatchEvent(new CustomEvent('pbws:ready',{detail:window.pbwsSession}));
+ },next);
+ await page.waitForFunction(role=>document.getElementById('role-label')?.textContent?.includes(
+  role==='ws'?'Wanderson':role==='power'?'Sandro':'Administrador'),next);
+ await page.waitForTimeout(160);
+}
+
 async function scenario(width,height,userRole='admin',seedDraft=null){
   const page=await browser.newPage({viewport:{width,height},deviceScaleFactor:width<600?2:1,isMobile:width<600,hasTouch:width<600});
   page.on('pageerror',err=>{failures.push('JS '+width+': '+err.message);console.error('BROWSER SCRIPT ERROR '+width,err.stack||err.message);});
@@ -52,7 +68,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
       used_battery_sales:[{id:'00000000-0000-4000-8000-000000000012',battery_id:id,customer_name:'Cliente Exemplo',
       sale_price_cents:19000,payment_method:'pix',warranty_days:30,sold_by:'00000000-0000-4000-8000-000000000099',sold_at:now}],
       used_battery_settlements:[{id:sid,battery_id:id,sale_id:'00000000-0000-4000-8000-000000000012',owed_cents:6000,paid_cents:0,waived_cents:0,created_at:now}],
-      used_settlement_batches:[],used_settlement_batch_items:[],used_settlement_events:[],used_battery_activity:[],
+      used_settlement_batches:[],used_settlement_batch_items:[],used_settlement_events:[],used_battery_activity:[],used_sale_revisions:[],
       ws_expenses:[],ws_expense_events:[],pbws_sale_drafts:seedDraft?[seedDraft]:[]
     };
     const stub={
@@ -201,8 +217,9 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
     await page.close();return;
   }
   await page.locator('.stat-grid .stat-card').first().waitFor({timeout:10000});
-  assert.equal(await page.locator('.stat-card').count(),4,'painel deve ter 4 cartões');
+  assert.equal(await page.locator('.stat-card').count(),3,'painel simples deve ter 3 indicadores');
   assert.ok(await page.locator('#pbws-bell').isVisible(),'sininho aparece no painel');
+  assert.ok(await page.locator('[data-act="open-notifications"]').isVisible(),'atalho de notificações na página inicial');
   await page.locator('#pbws-bell').click();
   assert.ok(await page.locator('#pbws-notif-panel').isVisible(),'central de avisos abre');
   assert.ok(await page.locator('#pbws-notif-list').isVisible(),'lista de notificacoes visivel');
@@ -216,33 +233,46 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   }
   const side=width<600?'#bottom-nav':'#side-nav';
   if(userRole==='power'){
-    await page.locator(side+' [data-view="sales"]').click();
+    await navigate(page,side,'sales');
     assert.equal(await page.locator('[data-act="new-sale"]').count(),0,'Power nao cadastra venda de hoje');
     assert.ok(await page.locator('[data-act="cancel-sale"]').first().isVisible(),'Sandro pode excluir venda');
     await page.locator('[data-act="cancel-sale"]').first().click();
     assert.ok(await page.locator('#cancel-sale-form').isVisible(),'Sandro pode informar motivo');
     await page.locator('#modal-close').click();
-    await page.locator('[data-act="new-historical-sale"]').click();
-    assert.ok(await page.locator('#sale-form [name=sold_when]').isVisible(),'Sandro lança venda antiga');
+    assert.equal(await page.locator('[data-act="new-historical-sale"]').count(),0,
+      'Sandro não lança vendas; só a WS cadastra');
+    assert.ok(await page.locator('[data-act="edit-sale"]').first().isVisible(),
+      'Sandro pode editar venda lançada pela WS');
+    await page.locator('[data-act="edit-sale"]').first().click();
+    assert.ok(await page.locator('#edit-sale-form').isVisible(),'Sandro abre formulário de correção');
     await page.locator('#modal-close').click();
-    await page.locator(side+' [data-view="expenses"]').click();
+    await navigate(page,side,'expenses');
     assert.ok((await page.locator('.page-heading').textContent()).includes('Power Baterias'),'Sandro vê despesas Power');
     await page.locator('[data-act="new-historical-expense"]').click();
     assert.ok(await page.locator('#expense-form [name=spent]').isVisible(),'Sandro registra gasto antigo');
     await page.close();return;
   }
   if(userRole==='ws'){
-    await page.locator(side+' [data-view="sales"]').click();
+    await navigate(page,side,'sales');
+    assert.ok(await page.locator('[data-act="new-sale"]').first().isVisible(),
+      'Só a WS recebe botão de registro');
     assert.ok(await page.locator('[data-act="cancel-sale"]').first().isVisible(),'Wanderson pode excluir venda');
     await page.locator('[data-act="cancel-sale"]').first().click();
     assert.ok(await page.locator('#cancel-sale-form').isVisible(),'Wanderson pode informar motivo');
     await page.locator('#modal-close').click();
-    await page.locator(side+' [data-view="expenses"]').click();
+    await page.locator('[data-act="edit-sale"]').first().click();
+    assert.ok(await page.locator('#edit-sale-form').isVisible(),'Wanderson pode corrigir venda');
+    await page.locator('#modal-close').click();
+    await navigate(page,side,'expenses');
     assert.ok((await page.locator('.page-heading').textContent()).includes('WS Baterias'),'WS vê suas despesas');
     assert.equal(await page.locator('[data-expense-branch="power"]').count(),0,'WS nao abre despesas Power');
     await page.close();return;
   }
-  await page.locator(side+' [data-view="sales"]').click();
+  await navigate(page,side,'sales');
+  assert.equal(await page.locator('[data-act="new-sale"]').count(),0,'Administrador não lança venda');
+  assert.equal(await page.locator('[data-act="new-historical-sale"]').count(),0,'Administrador não lança venda antiga');
+  await switchRole(page,'ws');
+  await navigate(page,side,'sales');
   const initialSaleText=await page.locator('#app-main').innerText();
   assert.match(initialSaleText,/Moura\s*60Ah/,'Lista de vendas mostra marca/modelo');
   assert.doesNotMatch(initialSaleText,/WS-000001/,'Códigos internos não aparecem na lista');
@@ -332,18 +362,19 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   assert.equal(correction.p_patch.sold_at_local,'2025-02-09T15:45',
     'Nova data/hora foi enviada ao banco');
   assert.match(correction.p_reason,/Cliente confirmou/);
-  await page.locator(side+' [data-view="activity"]').click();
+  await navigate(page,side,'activity');
   const activityText=await page.locator('#app-main').innerText();
   assert.match(activityText,/Data e horário corrigidos/);
   assert.match(activityText,/Moura\s*60Ah/,'Histórico usa marca e modelo');
   assert.doesNotMatch(activityText,/WS-0000\d+/,'Histórico não mostra códigos de baterias');
   assert.match(activityText,/ANTES: .* → DEPOIS: /);
   assert.match(activityText,/09\/02\/2025/);
-  await page.locator(side+' [data-view="sales"]').click();
+  await navigate(page,side,'sales');
   await page.locator('[data-act="cancel-sale"]').first().click();
   assert.ok(await page.locator('#cancel-sale-form').isVisible(),'cancelamento administrativo acessivel');
   await page.locator('#modal-close').click();
-  await page.locator(side+' [data-view="settlements"]').click();
+  await switchRole(page,'admin');
+  await navigate(page,side,'settlements');
   // Atualizacoes em tempo real podem redesenhar a linha durante um clique.
   // Envia o evento de selecao e testa a acao resultante, sem flakiness do DOM.
   await page.locator('[data-select-settle]').first().evaluate(input=>{
@@ -353,7 +384,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   await page.locator('[data-act="batch-settle"]').click();
   assert.ok(await page.locator('#batch-form').isVisible(),'acerto em lote acessível');
   await page.locator('#modal-close').click();
-  await page.locator(side+' [data-view="expenses"]').click();
+  await navigate(page,side,'expenses');
   await page.locator('[data-act="new-expense"]').click();
   assert.ok(await page.locator('#expense-form').isVisible(),'formulário de despesa acessível');
   await page.locator('#modal-close').click();
@@ -381,7 +412,7 @@ async function scenario(width,height,userRole='admin',seedDraft=null){
   assert.equal(power.p_amount_cents,5500);
   assert.equal(power.p_spent_on,'2025-02-12');
   assert.equal(power.p_spent_at_local,'2025-02-12T10:30');
-  await page.locator(side+' [data-view="reports"]').click();
+  await navigate(page,side,'reports');
   await page.locator('#monthly-report .stat-card').first().waitFor({timeout:10000});
   assert.ok(await page.locator('#monthly-report').isVisible(),'relatório mensal renderiza');
   assert.equal(await page.locator('#report-type').inputValue(),'month');
