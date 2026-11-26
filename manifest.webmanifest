@@ -7,8 +7,8 @@
   "start_url": "/power-baterias-e-ws-baterias/",
   "scope": "/power-baterias-e-ws-baterias/",
   "display": "standalone",
-  "background_color": "#070b10",
-  "theme_color": "#070b10",
+  "background_color": "#f3f5f3",
+  "theme_color": "#f3f5f3",
   "orientation": "any",
   "icons": [
     {
