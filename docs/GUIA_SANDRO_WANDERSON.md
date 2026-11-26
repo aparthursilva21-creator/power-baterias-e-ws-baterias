@@ -23,9 +23,9 @@ O banco grava a correção com responsável, motivo e valores antes/depois, mant
 
 ## Como cancelar uma venda
 
-Abra **Vendas → Excluir venda**, escreva um motivo e digite `CANCELAR` para confirmar. A venda é cancelada logicamente e sai dos totais, mas permanece auditada. Uma notificação informa ambos.
+Abra **Vendas → Cancelar venda**, escreva um motivo e digite `CANCELAR` para confirmar. A venda é cancelada logicamente e sai dos totais, mas permanece auditada. Uma notificação informa ambos.
 
-Se a venda possuir acerto já pago, dispensado ou associado a lote, o cancelamento é bloqueado até a conciliação financeira, para evitar que uma dívida ou recebimento desapareça indevidamente.
+Quando o acerto já teve pagamento, dispensa ou lote, **Sandro ou administrador** podem cancelar com a confirmação de uma pendência financeira. O pagamento antigo não desaparece; a situação fica em **Acertos → Conciliação de vendas canceladas**, para ser resolvida com justificativa após conferência real.
 
 ## Como receber notificações no celular
 
@@ -57,3 +57,9 @@ A aba **Relatórios** continua com seleção **Diário, Mensal e Anual**, permit
 As regras de acesso também são validadas no **Supabase**, não apenas nos botões. Cadastro exclusivo WS; correção e cancelamento para WS/Power/admin; auditoria transacional. Nenhuma venda existente é alterada apenas por instalar a atualização.
 
 Arquivos: `app.js`, `calm-ui.css`, `supabase/020_shared_sales_roles_notifications.sql`, `tests/shared-sales-workflow.sql`.
+
+## Edição fácil do cliente
+
+Em **Vendas → Editar venda**, o nome do cliente, telefone e placa aparecem primeiro. Os demais campos ficam em **Editar outros dados da venda**. É necessário informar o motivo de qualquer correção.
+
+[Guia do cancelamento com acerto já realizado](CANCELAMENTO_COM_ACERTO.md).
