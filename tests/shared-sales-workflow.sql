@@ -48,6 +48,7 @@ begin
  select count(*) into v_n from public.used_battery_sales where id=v_sale
    and sold_by=v_actor and sold_at=v_original and sale_price_cents=18500;
  if v_n<>1 then raise exception 'Edicao mudou vendedor ou horario da venda';end if;
+ perform set_config('request.jwt.claim.sub',v_ws::text,true);
  select count(*) into v_n from public.pbws_notifications where recipient_id=v_ws
    and title='Venda corrigida' and created_at>now()-interval '3 minutes';
  if v_n<1 then raise exception 'WS nao recebeu aviso da edicao do Sandro';end if;
@@ -103,6 +104,7 @@ begin
  select count(*) into v_n from public.used_sale_revisions
  where sale_id=v_sale and action='cancelled' and actor_id=v_power;
  if v_n<>1 then raise exception 'Cancelamento do Sandro nao foi auditado';end if;
+ perform set_config('request.jwt.claim.sub',v_ws::text,true);
  select count(*) into v_n from public.pbws_notifications
  where recipient_id=v_ws and title='Venda cancelada' and created_at>now()-interval '3 minutes';
  if v_n<1 then raise exception 'WS nao recebeu cancelamento';end if;
