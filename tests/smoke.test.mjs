@@ -60,6 +60,10 @@ test('aplicativo real usa banco remoto, não localStorage',()=>{
  assert.match(js,/settle_used_batteries_batch/);
  assert.match(js,/register_ws_expense/);
  assert.match(js,/get_power_ws_period_report/);
+ assert.match(js,/canEditSale = s => !!s && !s.cancelled_at/);
+ assert.match(js,/const canSell = \(\) => role === 'ws'/);
+ assert.match(js,/nav-more/);
+ assert.match(read('index.html'),/calm-ui\.css/);
  assert.match(js,/downloadPeriodPDF/);
  assert.match(js,/reportMode/);
  assert.match(js,/get_power_ws_team/);
