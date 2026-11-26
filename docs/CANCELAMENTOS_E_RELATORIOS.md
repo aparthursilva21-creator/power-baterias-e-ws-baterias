@@ -3,7 +3,7 @@
 ## Excluir uma venda (Sandro, Wanderson ou administrador)
 
 1. Abra **Vendas** e localize a venda pelo **nome da bateria**, cliente e data.
-2. Clique em **Excluir venda**.
+2. Clique em **Cancelar venda**.
 3. Confira a bateria, valor e o aviso financeiro.
 4. Informe uma justificativa real, com no mínimo 5 caracteres.
 5. Digite **CANCELAR** exatamente e confirme.
@@ -12,11 +12,11 @@
 
 A exclusão é permitida às contas autorizadas da **Power Baterias (Sandro)**, **WS Baterias (Wanderson)** e **administrador (Arthur)**.
 
-### Proteção dos acertos
+### Acertos já pagos ou em lote
 
-Não é permitido cancelar uma venda cujo acerto com Sandro já tenha **pagamento, dispensa ou participação em acerto em lote**. O sistema bloqueia e informa que o valor precisa ser reconciliado antes, para não apagar uma venda que gerou movimentação financeira real. A correção depende de revisão da operação e dos comprovantes, e não estorna dinheiro automaticamente.
+Sandro ou administrador **podem cancelar uma venda com pagamento/dispensa/acerto em lote previamente registrado**, mas a ação exige confirmação explícita de que será feita a conciliação. Uma pendência ficará em **Acertos → Conciliação de vendas canceladas** para registrar como o financeiro foi resolvido.
 
-O botão **Excluir venda** não é exclusão permanente do banco, inclusive por segurança dos registros de vendas e auditorias.
+Os pagamentos anteriores **não são estornados ou apagados automaticamente**. Somente confirme uma devolução ou compensação depois que ela realmente ocorrer. Consulte o [guia detalhado](CANCELAMENTO_COM_ACERTO.md).
 
 ### Histórico de alterações
 
