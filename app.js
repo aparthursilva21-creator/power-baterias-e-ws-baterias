@@ -908,27 +908,34 @@ function openEditSale(s){
   return toast('Você não tem permissão para corrigir essa venda.','error');
  const b=battery(s.battery_id);
  if(!b)return toast('Dados da bateria não encontrados.','error');
- const body='<div class="note">Corrigir a venda da bateria '+esc(batteryDisplay(b))+'. <b>A data e hora em que a venda aconteceu podem ser alteradas.</b> O horário do cadastro e o responsável originais continuam preservados. Toda correção exige motivo e fica no histórico. O repasse ao Sandro é ajustado na aba Acertos.</div>'+
+ const body='<div class="note">Venda: <strong>'+esc(batteryDisplay(b))+
+ '</strong> · Registrada por '+esc(staffName(s.sold_by))+
+ '. Você pode mudar o nome do cliente e outras informações. A alteração exige motivo e é avisada aos dois.</div>'+
  '<form id="edit-sale-form" class="field-grid" style="margin-top:16px">'+
+ '<div class="edit-section-title wide">Dados do cliente</div>'+
+ field('Nome do cliente','customer','text',s.customer_name,'maxlength="160" required autocomplete="name"')+
+ field('Telefone / WhatsApp','phone','tel',s.customer_phone||'','maxlength="30"')+
+ field('Placa do veículo','plate','text',s.vehicle_plate||'','maxlength="15"')+
+ '<details id="edit-sale-advanced" class="simple-details wide"><summary>Editar outros dados da venda (valor, bateria, data e garantia)</summary>'+
+ '<div class="field-grid" style="margin-top:14px">'+
  field('Data e hora da venda (Brasília)','sold_when','datetime-local',
    brazilInputDateTime(s.sold_at),'required max="'+brazilLocalNow()+'" class="wide"')+
- '<div class="note wide">Cadastrada originalmente em '+stamp(s.recorded_at||s.sold_at)+
-  '. Uma mudança da data da venda afetará o mês do relatório e o início da garantia, sem apagar o registro original.</div>'+
- field('Marca','brand','text',b.brand,'maxlength="100" required')+
- field('Modelo','model','text',b.model,'maxlength="120" required')+
+ '<div class="note wide">O horário de cadastro e o responsável original permanecem no histórico. '+
+ 'Mudar a data da venda altera o relatório e o início da garantia.</div>'+
+ field('Marca da bateria','brand','text',b.brand,'maxlength="100" required')+
+ field('Modelo da bateria','model','text',b.model,'maxlength="120" required')+
  field('Amperagem (Ah)','amperage','number',b.amperage_ah||'','min="1" max="500" step="1"')+
  field('Número de série','serial','text',b.serial_number||'','maxlength="120"')+
  field('Valor da venda (R$)','price','number',fromCents(s.sale_price_cents),'min="0.01" step="0.01" required')+
  field('Custo de recuperação (R$)','recovery','number',fromCents(b.recovery_cost_cents),'min="0" step="0.01" required')+
- field('Cliente','customer','text',s.customer_name,'maxlength="160" required')+
- field('Telefone','phone','tel',s.customer_phone||'','maxlength="30"')+
- field('Placa','plate','text',s.vehicle_plate||'','maxlength="15"')+
- selectField('Pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],s.payment_method)+
+ selectField('Forma de pagamento','method',[['pix','PIX'],['cash','Dinheiro'],['card','Cartão'],['other','Outro']],s.payment_method)+
  field('Garantia (dias)','warranty','number',s.warranty_days,'min="0" max="365" required')+
  '<label class="field wide"><span>Observações</span><textarea name="notes" maxlength="1200">'+esc(s.notes||'')+'</textarea></label>'+
- '<label class="field wide"><span>Motivo da correção (obrigatório)</span><textarea name="reason" minlength="5" maxlength="500" required placeholder="Ex.: valor digitado errado no lançamento"></textarea></label>'+
+ '</div></details>'+
+ '<label class="field wide"><span>Por que você está corrigindo esta venda?</span>'+
+ '<textarea name="reason" minlength="5" maxlength="500" required placeholder="Ex.: nome do cliente digitado errado"></textarea></label>'+
  '</form>';
- modal('Corrigir venda',body,'<button class="btn secondary" data-modal-close type="button">Voltar</button><button class="btn" form="edit-sale-form" type="submit">Salvar correção</button>');
+ modal('Editar venda',body,'<button class="btn secondary" data-modal-close type="button">Voltar</button><button class="btn" form="edit-sale-form" type="submit">Salvar correção</button>');
  $('#edit-sale-form').addEventListener('submit',e=>{
   e.preventDefault();
   try{
