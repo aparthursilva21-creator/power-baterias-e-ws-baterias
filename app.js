@@ -13,6 +13,7 @@ const MENU = [
   ['dashboard', '◫', 'Início'],
   ['sales', '▣', 'Vendas'],
   ['settlements', '⇄', 'Acertos'],
+  ['credits', '◇', 'Créditos'],
   ['expenses', '◈', 'Despesas'],
   ['reports', '▥', 'Relatórios'],
   ['warranties', '♢', 'Garantias'],
@@ -23,7 +24,7 @@ const METHODS = { pix: 'PIX', cash: 'Dinheiro', card: 'Cartão', transfer: 'Tran
 const titles = Object.fromEntries(MENU.map(x => [x[0], x[2]]));
 let api = null, user = null, role = null, current = (new URLSearchParams(location.search).get('view') || 'dashboard');
 if(!MENU.some(x=>x[0]===current))current='dashboard';
-let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [], vales: [], valeAllocations: [], allSales: [], allSettlements: [] };
+let rows = { batteries: [], sales: [], settlements: [], batches: [], batchItems: [], expenses: [], events: [], activity: [], expenseEvents: [], staff: [], saleRevisions: [], powerExpenses: [], powerExpenseEvents: [], financialReviews: [], financialReviewEvents: [], vales: [], valeAllocations: [], allSales: [], allSettlements: [], creditEvents: [] };
 let refreshing = false, submitting = false, ready = false, timer = null, report = null;
 let selectedSettle = new Set();
 let expenseBranch='ws';
@@ -125,7 +126,9 @@ const settleFor = id => rows.settlements.find(s => s.battery_id === id);
 const appliedVale = (id,key='settlement_id') => rows.valeAllocations.filter(a=>a[key]===id).reduce((sum,a)=>sum+Number(a.amount_cents),0);
 const valeBalance = v => v.cancelled_at?0:Math.max(0,Number(v.amount_cents)-appliedVale(v.id,'vale_id'));
 const availableVales = () => rows.vales.reduce((sum,v)=>sum+valeBalance(v),0);
-const cashReceived = s => Number(s.paid_cents||0)-appliedVale(s.id);
+const creditTotals=(id=null,key='settlement_id')=>rows.creditEvents.filter(c=>id===null||c[key]===id).reduce((a,c)=>({generated:a.generated+Number(c.generated_cents),used:a.used+Number(c.used_cents)}),{generated:0,used:0});
+const creditBalance=()=>{const c=creditTotals();return c.generated-c.used;};
+const cashReceived = s => {const c=creditTotals(s.id);return Number(s.paid_cents||0)-appliedVale(s.id)-c.used+c.generated;};
 const remaining = s => Math.max(0, Number(s.owed_cents) - Number(s.paid_cents) - Number(s.waived_cents));
 function settlingStatus(s) {
   if (!s) return ['Sem venda','gray'];
@@ -354,7 +357,7 @@ window.addEventListener('pbws:logout',()=>{
   const oldApi=api;
   clearTimeout(draftSaveTimer);
   activeSaleDraft=null;draftStore=null;draftCache={sale:null,historical_sale:null};
-  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[],vales:[],valeAllocations:[],allSales:[],allSettlements:[]};
+  api=null;user=null;role=null;ready=false;report=null;rows={batteries:[],sales:[],settlements:[],batches:[],batchItems:[],expenses:[],events:[],activity:[],expenseEvents:[],staff:[],saleRevisions:[],powerExpenses:[],powerExpenseEvents:[],financialReviews:[],financialReviewEvents:[],vales:[],valeAllocations:[],allSales:[],allSettlements:[],creditEvents:[]};
   selectedSettle.clear();if(timer)clearInterval(timer);timer=null;
   clearTimeout(liveRefreshDebounce);
   if(liveChannel && oldApi)void oldApi.removeChannel(liveChannel);
@@ -379,6 +382,7 @@ async function loadAll(silent=false) {
     ['financialReviewEvents',api.from('used_sale_financial_review_events').select('*').order('occurred_at',{ascending:false}).limit(500)],
     ['vales',api.from('ws_vales').select('*').order('created_at',{ascending:false})],
     ['valeAllocations',api.from('ws_vale_allocations').select('*')],
+    ['creditEvents',api.from('ws_credit_events').select('*').order('occurred_at',{ascending:false})],
     ['staff',api.rpc('get_power_ws_team')]
   ];
   if(canViewWSExpenses()) requests.push(
@@ -411,10 +415,10 @@ async function loadAll(silent=false) {
 }
 function render() {
   if(!api||!ready) return;
-  nav(); const titlesDetails={dashboard:'A operação em tempo real',sales:'Todas as vendas registradas',settlements:'Valores devidos à Power após as vendas',expenses:'Custos operacionais da WS',reports:'Fechamento financeiro e indicadores',warranties:'Garantias e prazos registrados',activity:'Registro de alterações e responsáveis'};
+  nav(); const titlesDetails={dashboard:'A operação em tempo real',sales:'Todas as vendas registradas',settlements:'Valores devidos à Power após as vendas',credits:'Créditos de pagamentos excedentes do Wanderson',expenses:'Custos operacionais da WS',reports:'Fechamento financeiro e indicadores',warranties:'Garantias e prazos registrados',activity:'Registro de alterações e responsáveis'};
   $('#heading').textContent=titles[current] || 'Visão geral';
   $('#subtitle').textContent=titlesDetails[current]||'Controle compartilhado';
-  const fn={dashboard:dashboardView,sales:salesView,settlements:settlementView,expenses:expenseView,reports:reportView,warranties:warrantyView,activity:activityView}[current]||dashboardView;
+  const fn={dashboard:dashboardView,sales:salesView,settlements:settlementView,credits:creditView,expenses:expenseView,reports:reportView,warranties:warrantyView,activity:activityView}[current]||dashboardView;
   $('#app-main').innerHTML='<div class="page-stack">'+fn()+'</div>';
 }
 function dashboardView() {
@@ -557,6 +561,17 @@ function openVale(v=null){
  else void runRpc('record_ws_vale',{p_amount_cents:cents(d.amount),p_description:d.description.trim()},'Vale registrado. Disponível para desconto nos acertos.');
  }catch(err){toast(explain(err),'error');}});
 }
+function creditView(){
+ const totals=creditTotals(),balance=creditBalance(),vales=availableVales();
+ const items=rows.creditEvents.map(c=>{
+  const st=rows.allSettlements.find(s=>s.id===c.settlement_id),sale=rows.allSales.find(s=>s.id===st?.sale_id),generated=Number(c.generated_cents)>0;
+  return '<div class="list-entry"><div style="min-width:0"><strong>'+esc((generated?'Crédito gerado por ':'Crédito utilizado por ')+staffName(c.actor_id))+'</strong><small>'+esc(batteryDisplay(battery(st?.battery_id)))+' · '+esc(sale?.customer_name||'Cliente não informado')+'</small><small>'+stamp(c.occurred_at)+(sale?.cancelled_at?' · Venda cancelada: conferir acerto':'')+'</small></div><div class="text-right"><strong>'+(generated?'+':'−')+brl(generated?c.generated_cents:c.used_cents)+'</strong><small>'+esc(generated?'Pagamento excedente':'Desconto no acerto')+'</small></div></div>';
+ }).join('');
+ return heading('Créditos do Wanderson','Dinheiro pago a mais fica guardado para um próximo acerto.',button('Ir para acertos','settlements','secondary'))+
+ '<div class="stat-grid">'+stat('Crédito disponível',brl(balance),true)+stat('Crédito gerado · total',brl(totals.generated))+stat('Crédito usado · total',brl(totals.used))+stat('Vales ainda disponíveis',brl(vales))+stat('Crédito menos vales',brl(balance-vales))+'</div>'+
+ '<div class="note">O crédito é usado somente quando Sandro informa um desconto no acerto. Vales e créditos permanecem separados; a diferença exibida é um indicador, não uma baixa automática.</div>'+
+ panel('Movimentações de crédito','<div class="panel-body lined-list">'+(items||'<div class="empty">Nenhum crédito movimentado.</div>')+'</div>');
+}
 function settlementView() {
  const pending=rows.settlements.filter(x=>remaining(x)>0);
  const openReviews=rows.financialReviews.filter(x=>x.status==='pending');
@@ -591,12 +606,12 @@ function settlementView() {
   const b=battery(s.battery_id),sale=saleFor(s.battery_id),sts=settlingStatus(s);
   const pick=canPay()&&remaining(s)>0?'<input type="checkbox" data-select-settle="'+s.id+'" aria-label="Selecionar acerto '+esc(batteryDisplay(b))+'" '+(selectedSettle.has(s.id)?'checked':'')+'>':'';
   const actions=canPay()?'<button class="btn tiny secondary" type="button" data-act="single-settlement" data-id="'+s.id+'">Gerenciar</button>':'—';
-  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(batteryDisplay(b))+'</div><div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Venda registrada')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(cashReceived(s))+'<div class="cell-sub">Vale: '+brl(appliedVale(s.id))+'</div></td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
+  return '<tr><td>'+pick+'</td><td><div class="cell-main">'+esc(batteryDisplay(b))+'</div><div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Venda registrada')+'</div></td><td>'+stamp(sale?.sold_at)+'</td><td>'+esc(sale?.customer_name||'—')+'<div class="cell-sub">Venda '+brl(sale?.sale_price_cents||0)+'</div></td><td>'+brl(s.owed_cents)+'</td><td>'+brl(cashReceived(s))+'<div class="cell-sub">Vale: '+brl(appliedVale(s.id))+' · Crédito usado: '+brl(creditTotals(s.id).used)+' · Gerado: '+brl(creditTotals(s.id).generated)+'</div></td><td>'+brl(remaining(s))+'</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+actions+'</td></tr>';
  }).join('');
- const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto em lote</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(Number(x.total_paid_cents)-appliedVale(x.id,'batch_id'))+'</strong><small>Vale: '+brl(appliedVale(x.id,'batch_id'))+'</small><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
+ const batchesHtml=rows.batches.slice(0,10).map(x=>'<div class="list-entry"><div><strong>Acerto em lote</strong><small>'+stamp(x.settled_at)+' · '+esc(staffName(x.created_by))+' · '+esc(METHODS[x.payment_method]||x.payment_method)+'</small></div><div class="text-right"><strong>'+brl(Number(x.total_paid_cents)-appliedVale(x.id,'batch_id')-creditTotals(x.id,'batch_id').used+creditTotals(x.id,'batch_id').generated)+'</strong><small>Vale: '+brl(appliedVale(x.id,'batch_id'))+'</small><small>Crédito usado: '+brl(creditTotals(x.id,'batch_id').used)+' · Gerado: '+brl(creditTotals(x.id,'batch_id').generated)+'</small><small>'+rows.batchItems.filter(y=>y.batch_id===x.id).length+' bateria(s)</small></div></div>').join('')||'<div class="empty">Nenhum lote registrado.</div>';
  return heading('Acertos','Selecione uma ou várias baterias vendidas para confirmar os repasses.',canPay()?'<div class="btn-row">'+button('✓ Acertar selecionadas','batch-settle')+(pending.length?button('🔔 Cobrar WS','remind-ws','secondary'):'')+'</div>':'')+
  '<div class="stat-grid">'+stat('Saldo pendente',brl(total),true)+stat('Baterias pendentes',String(pending.length))+stat('Já recebido · total',brl(rows.settlements.reduce((a,s)=>a+cashReceived(s),0)))+stat('Acertos encerrados',String(rows.settlements.filter(s=>remaining(s)===0).length))+'</div>'+
- valePanel()+reviewsPanel+
+ '<div class="panel"><div class="panel-body"><div class="list-entry"><div><strong>Crédito do Wanderson: '+brl(creditBalance())+'</strong><small>Use no acerto ou guarde para depois.</small></div>'+button('Ver créditos','credits','secondary')+'</div></div></div>'+valePanel()+reviewsPanel+
  panel('Controle por bateria',tbl(['','Bateria','Venda em','Cliente','Repasse','Recebido / vale','Falta','Situação',''],rowsHtml))+
  panel('Últimos acertos em lote','<div class="panel-body lined-list">'+batchesHtml+'</div>')+
  '<div class="note">Apenas Sandro ou administrador podem confirmar pagamentos, corrigir valores ou dispensar cobrança. Cada alteração fica no histórico.</div>';
@@ -688,6 +703,12 @@ function reportSummary(r,period=reportWindow()){
  line('Total devido à Power por vendas no período',brl(r.power_repasse_sales_month_cents))+
  line('Pagamentos recebidos pela Power no período',brl(r.power_received_in_month_cents))+
  line('Vales descontados no período',brl(r.ws_vales_applied_cents))+
+ line('Vales registrados no período',brl(r.ws_vales_registered_cents))+
+ line('Créditos gerados no período',brl(r.ws_credit_generated_cents))+
+ line('Créditos utilizados no período',brl(r.ws_credit_used_cents))+
+ line('Crédito disponível hoje',brl(r.ws_credit_balance_cents))+
+ line('Vales disponíveis hoje',brl(r.ws_vale_balance_cents))+
+ line('Crédito menos vales · saldo atual',brl(r.ws_credit_minus_vales_cents))+
  line('Desses, referentes a vendas canceladas',brl(r.power_cancelled_receipts_in_period_cents))+
  line('Conciliações pendentes hoje',String(r.financial_reviews_pending_count||0))+
  line('Valor de pagamentos a conferir',brl(r.financial_reviews_pending_paid_cents))+
@@ -752,15 +773,17 @@ function activityView(){
    const st=rows.allSettlements.find(y=>y.id===x.settlement_id),actor=who(x.actor_id);
    const delta=Number(x.new_paid_cents)-Number(x.old_paid_cents),saldo=Number(x.new_owed_cents)-Number(x.new_paid_cents)-Number(x.new_waived_cents);
    const vale=x.action==='payment'?rows.valeAllocations.filter(a=>a.settlement_id===x.settlement_id&&(x.batch_id?a.batch_id===x.batch_id:!a.batch_id&&new Date(a.applied_at).getTime()===new Date(x.occurred_at).getTime())).reduce((sum,a)=>sum+Number(a.amount_cents),0):0;
+   const credits=x.action==='payment'?rows.creditEvents.filter(a=>a.settlement_id===x.settlement_id&&(x.batch_id?a.batch_id===x.batch_id:!a.batch_id&&new Date(a.occurred_at).getTime()===new Date(x.occurred_at).getTime())).reduce((t,a)=>({generated:t.generated+Number(a.generated_cents),used:t.used+Number(a.used_cents)}),{generated:0,used:0}):{generated:0,used:0};
    const labels={payment:saldo===0?'Acerto confirmado por ':'Pagamento parcial registrado por ',historical_payment:'Pagamento antigo registrado por ',payment_correction:'Pagamento corrigido por ',amount_adjustment:'Valor do acerto editado por ',waiver:'Saldo dispensado por ',reopen:'Acerto reaberto por '};
    const detail=[subject(st)];
-   if(['payment','historical_payment'].includes(x.action))detail.push('Valor acertado: '+brl(delta),'Vale descontado: '+brl(vale),'Dinheiro recebido: '+brl(delta-vale));
+   if(['payment','historical_payment'].includes(x.action))detail.push('Valor acertado: '+brl(delta),'Vale descontado: '+brl(vale),'Crédito usado: '+brl(credits.used),'Crédito gerado: '+brl(credits.generated),'Dinheiro recebido: '+brl(delta-vale-credits.used+credits.generated));
    if(x.action==='payment_correction')detail.push('Correção do dinheiro recebido: '+brl(delta));
    if(x.action==='amount_adjustment')detail.push('Repasse: '+brl(x.old_owed_cents)+' → '+brl(x.new_owed_cents));
    if(['waiver','reopen'].includes(x.action))detail.push('Valor dispensado: '+brl(x.old_waived_cents)+' → '+brl(x.new_waived_cents));
    detail.push('Saldo pendente: '+brl(saldo));if(x.reason&&!['payment','historical_payment'].includes(x.action))detail.push('Motivo: '+hideInternalBatteryCodes(x.reason));
    return {at:x.occurred_at,who:x.actor_id,category:'Acerto',description:(labels[x.action]||'Acerto atualizado por ')+actor,detail};
  }),
+ ...rows.creditEvents.map(c=>({at:c.occurred_at,who:c.actor_id,category:'Crédito',description:(Number(c.generated_cents)>0?'Crédito gerado por ':'Crédito utilizado por ')+who(c.actor_id),detail:[subject(rows.allSettlements.find(s=>s.id===c.settlement_id)),brl(Number(c.generated_cents)||Number(c.used_cents))]})),
  ...rows.vales.flatMap(v=>[{at:v.created_at,who:v.created_by,category:'Vale',description:'Vale registrado por '+who(v.created_by),detail:['Wanderson: '+brl(v.amount_cents),v.description]},...(v.cancelled_at?[{at:v.cancelled_at,who:v.cancelled_by,category:'Vale',description:'Vale cancelado por '+who(v.cancelled_by),detail:[brl(v.amount_cents),'Motivo: '+v.cancellation_reason]}]:[])]),
  ...rows.powerExpenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa Power',description:(x.action==='created'?'Despesa registrada por ':'Despesa corrigida por ')+who(x.actor_id),detail:[brl(x.new_amount_cents),x.reason||'']})),
  ...rows.expenseEvents.map(x=>({at:x.occurred_at,who:x.actor_id,category:'Despesa WS',description:(x.action==='created'?'Despesa registrada por ':'Despesa corrigida por ')+who(x.actor_id),detail:[brl(x.new_amount_cents),x.reason||'']}))
@@ -1006,7 +1029,7 @@ function openCancelSale(s){
  const needsReview=paid>0||waived>0||hasBatch;
  const canReview=role==='power'||role==='admin';
  const warning=needsReview?'<div class="note warn" style="margin-bottom:14px">'+
-  '<b>Acerto anterior identificado</b><div>Dinheiro recebido: <strong>'+brl(paid-appliedVale(st?.id))+'</strong> · Vales usados: <strong>'+brl(appliedVale(st?.id))+
+  '<b>Acerto anterior identificado</b><div>Dinheiro recebido: <strong>'+brl(st?cashReceived(st):0)+'</strong> · Vales usados: <strong>'+brl(appliedVale(st?.id))+
   '</strong> · Dispensa: '+brl(waived)+(hasBatch?' · Participou de acerto em lote':'')+'.</div>'+
   (canReview?
    '<p>O cancelamento não apaga pagamentos passados nem devolve dinheiro automaticamente. '+
@@ -1049,7 +1072,7 @@ function openResolveFinancialReview(item){
  const b=oldSale?battery(oldSale.battery_id):null;
  const body='<div class="note warn"><b>Conferência de acerto de venda cancelada</b>'+
  '<p>Bateria: '+esc(batteryDisplay(b))+' · Cliente: '+esc(oldSale?.customer_name||'—')+
- ' · Dinheiro recebido: <strong>'+brl(Number(item.paid_at_cancellation_cents)-appliedVale(item.settlement_id))+'</strong> · Vales utilizados: <strong>'+brl(appliedVale(item.settlement_id))+
+ ' · Dinheiro recebido: <strong>'+brl(Number(item.paid_at_cancellation_cents)-appliedVale(item.settlement_id)-creditTotals(item.settlement_id).used+creditTotals(item.settlement_id).generated)+'</strong> · Vales utilizados: <strong>'+brl(appliedVale(item.settlement_id))+
  '</strong>. Esse dinheiro não foi estornado automaticamente.</p></div>'+
  '<form id="resolve-financial-form" class="field-grid" style="margin-top:16px">'+
  selectField('O que aconteceu com o acerto?','resolution_method',[
@@ -1061,7 +1084,7 @@ function openResolveFinancialReview(item){
  '<label class="field wide"><span>Explique a movimentação e informe a referência/comprovante, se houver</span>'+
  '<textarea name="reason" minlength="8" maxlength="500" required placeholder="Ex.: devolução por PIX em 25/11, comprovante conferido"></textarea></label>'+
  '<div class="note wide">Só marque como resolvido depois da conferência real com Wanderson. '+
- 'O aplicativo registra sua declaração. Não transfere dinheiro nem devolve vales automaticamente ao saldo disponível.</div></form>';
+ 'O aplicativo registra sua declaração. Não transfere dinheiro nem reverte créditos ou vales automaticamente.</div></form>';
  modal('Resolver acerto cancelado',body,
  '<button type="button" class="btn secondary" data-modal-close>Voltar</button>'+
  '<button type="submit" class="btn" form="resolve-financial-form">Confirmar conferência</button>');
