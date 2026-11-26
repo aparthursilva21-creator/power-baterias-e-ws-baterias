@@ -60,10 +60,12 @@ Ao alternar para o WhatsApp, o sistema mantém o login Google e não desmonta o 
 
 ## Exclusões e relatórios por período
 
-Sandro, Wanderson e Arthur podem **excluir/cancelar uma venda com motivo obrigatório**, preservando registro, responsável e auditoria completa. Vendas com acertos já pagos, dispensados ou em lote precisam de conciliação financeira antes de cancelamento. A aba **Relatórios** permite **Diário, Mensal e Anual** e exporta **PDF e CSV**, com totais calculados pelo Supabase em horário de Brasília.
+Sandro, Wanderson e Arthur podem **excluir/cancelar uma venda com motivo obrigatório**, preservando registro, responsável e auditoria completa. Vendas com acertos já pagos, dispensados ou em lote agora **podem ser canceladas por Sandro ou administrador com confirmação**, preservando os pagamentos anteriores e criando uma **conciliação financeira pendente** em Acertos. A aba **Relatórios** permite **Diário, Mensal e Anual** e exporta **PDF e CSV**, com totais calculados pelo Supabase em horário de Brasília.
 
 ## Uso compartilhado Power e WS
 
 **[Guia de uso conjunto: Sandro e Wanderson, correções, cancelamentos e notificações](docs/GUIA_SANDRO_WANDERSON.md)**
 
 A interface foi simplificada para leitura no celular, com fundo claro e verde discreto. **Wanderson registra as vendas; Sandro e Wanderson podem corrigir/cancelar vendas**, sempre com justificativa, antes/depois e notificação para ambos. Os avisos no sistema funcionam automaticamente; para recebê-los com o aplicativo fechado, cada celular deve ativar Push no sininho. Relatórios diários, mensais e anuais com PDF foram mantidos.
+
+**[Cancelar uma venda com acerto lançado e editar o nome do cliente](docs/CANCELAMENTO_COM_ACERTO.md)** — o sistema preserva o dinheiro registrado, exige motivo e guarda o histórico. Os vales do Wanderson serão definidos separadamente dos acertos.
