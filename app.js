@@ -108,8 +108,8 @@ const dateBR = s => s ? (/^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? String(s).slice
 const roleName = r => ({ admin:'Administrador', power:'Power Baterias · Sandro', ws:'WS Baterias · Wanderson' }[r] || 'Usuário');
 const canSell = () => role === 'ws';
 const canBackdateSale = () => role === 'ws';
-const canCancelSale = s => !!s && !s.cancelled_at && ['ws','power','admin'].includes(role);
-const canEditSale = s => !!s && !s.cancelled_at && ['power','ws','admin'].includes(role);
+const canCancelSale = s => !!s && !s.cancelled_at && ['power','admin'].includes(role);
+const canEditSale = s => !!s && !s.cancelled_at && ['power','admin'].includes(role);
 const canPay = () => role === 'power' || role === 'admin';
 const canExpense = () => ['ws','power','admin'].includes(role);
 const canViewWSExpenses=()=>role==='ws'||role==='admin';
@@ -523,7 +523,7 @@ function salesView(){
  (dateRevision?'<div style="margin-top:4px">'+statusBadge('Data/hora corrigida','yellow')+'</div>':'')+
  '<div class="cell-sub">Registrada: '+stamp(s.recorded_at||s.sold_at)+' · '+esc(staffName(s.recorded_by||s.sold_by))+'</div></td><td>'+esc(batteryDisplay(b))+'<div class="cell-sub">'+(b?.amperage_ah?esc(b.amperage_ah+' Ah'):'Bateria vendida')+'</div></td><td><div class="cell-main">'+esc(s.customer_name)+'</div><div class="cell-sub">'+esc(s.customer_phone||'Sem telefone')+' · '+esc(s.vehicle_plate||'Sem placa')+'</div></td><td><strong>'+brl(s.sale_price_cents)+'</strong><div class="cell-sub">'+esc(METHODS[s.payment_method]||s.payment_method)+'</div></td><td>'+Number(s.warranty_days)+' dias</td><td>'+statusBadge(sts[0],sts[1])+'</td><td>'+allActions+'</td></tr>';
  }).join('');
- return heading('Vendas','Wanderson registra. Sandro e Wanderson podem corrigir ou cancelar, sempre com motivo e histórico.',
+ return heading('Vendas','Wanderson registra. Sandro pode corrigir ou cancelar, sempre com motivo e histórico.',
  '<div class="btn-row">'+
  (canSell()?button('+ Venda de hoje','new-sale'):'')+
  (canBackdateSale()?button('◷ Lançar venda antiga','new-historical-sale','secondary'):'')+
@@ -948,7 +948,7 @@ function openEditSale(s){
     recovery_cost_cents:cents(d.recovery),payment_method:d.method,
     warranty_days:Number(d.warranty),notes:d.notes
    };
-   patch.sold_at_local=d.sold_when;
+   if(d.sold_when!==brazilInputDateTime(s.sold_at))patch.sold_at_local=d.sold_when;
    void runRpc('correct_used_battery_sale',{
     p_sale_id:s.id,p_patch:patch,p_reason:d.reason.trim()
    },'Correção salva com data, hora e responsável no histórico.');
@@ -992,10 +992,8 @@ function openCancelSale(s){
   if(d.reason.trim().length<5)return toast('Descreva o motivo.','error');
   if(needsReview && d.acknowledge!=='yes')
    return toast('Confirme a ciência do acerto financeiro anterior.','error');
-  const rpc=needsReview?'cancel_used_battery_sale_with_review':'cancel_used_battery_sale';
-  const args=needsReview?
-   {p_sale_id:s.id,p_reason:d.reason.trim(),p_acknowledge_financial_history:true}:
-   {p_sale_id:s.id,p_reason:d.reason.trim()};
+  const rpc='cancel_used_battery_sale_with_review';
+  const args={p_sale_id:s.id,p_reason:d.reason.trim(),p_acknowledge_financial_history:needsReview&&d.acknowledge==='yes'};
   void runRpc(rpc,args,needsReview?
    'Venda cancelada. Acerto anterior preservado e conciliação pendente em Acertos.':
    'Venda cancelada. Auditoria preservada e ambos avisados.');
