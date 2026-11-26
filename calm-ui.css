@@ -228,3 +228,28 @@ input[type=checkbox]{accent-color:#386a50}
  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;
  scroll-behavior:auto!important}
 }
+
+/* Correções básicas em primeiro plano e conciliação financeira explícita. */
+.edit-section-title{
+ font-size:14px;font-weight:800;color:#274b37;padding:3px 0 5px;
+ border-bottom:1px solid #dce6de;margin-top:3px;
+}
+.simple-details{
+ border:1px solid #d5e1d7;border-radius:11px;padding:12px 14px;
+ background:#f7faf8;color:#25442f;
+}
+.simple-details summary{cursor:pointer;font-weight:750;font-size:13px;line-height:1.6;list-style:revert}
+.simple-details[open] summary{padding-bottom:11px;border-bottom:1px solid #d9e6db;margin-bottom:10px}
+.simple-details .field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.financial-ack{
+ display:flex;align-items:flex-start;gap:12px;padding:13px 14px;
+ border:1px solid #e5d19b;background:#fffaed;border-radius:10px;
+ color:#634d23;font-size:13px;font-weight:600;line-height:1.6;
+}
+.financial-ack input[type=checkbox]{flex:0 0 auto;margin-top:2px;width:22px;height:22px}
+#resolve-financial-form .note{font-size:13px}
+@media(max-width:850px){
+ .simple-details .field-grid{grid-template-columns:1fr}
+ .financial-ack{font-size:14px}
+ #edit-sale-form .field{font-size:14px}
+}
