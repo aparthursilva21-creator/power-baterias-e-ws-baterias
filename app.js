@@ -715,6 +715,7 @@ document.addEventListener('click',async e=>{
  if(view) {
   const next=view.dataset.view;
   if(next==='expenses'&&!canExpense())return;
+  const menu=view.closest('.nav-more');if(menu)menu.open=false;
   current=next;report=null;render();window.scrollTo({top:0,behavior:'smooth'});
   if(next==='reports')void fetchReport();
   return;
