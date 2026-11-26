@@ -99,6 +99,10 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/020_shared_sales_roles_notifications.sql
       - name: Verificar Sandro e WS editando e recebendo notificacoes
         run: psql -v ON_ERROR_STOP=1 -f tests/shared-sales-workflow.sql
+      - name: Criar conciliacao para vendas canceladas com acerto
+        run: psql -v ON_ERROR_STOP=1 -f supabase/021_paid_cancellation_reviews.sql
+      - name: Testar cancelamento pago e conciliacao financeira auditada
+        run: psql -v ON_ERROR_STOP=1 -f tests/paid-cancellation-workflow.sql
 
   browser:
     name: Navegador real no celular e no PC
