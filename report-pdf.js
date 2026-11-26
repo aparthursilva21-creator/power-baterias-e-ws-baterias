@@ -59,7 +59,8 @@ function summaryPages(p){
   ['Vendas realizadas',String(p.summary.sales_count||0)],
   ['Faturamento WS',money(p.summary.sales_revenue_cents)],
   ['Repasse previsto à Power',money(p.summary.power_repasse_sales_month_cents)],
-  ['Recebido pela Power no período',money(p.summary.power_received_in_month_cents)]
+  ['Recebido pela Power no período',money(p.summary.power_received_in_month_cents)],
+  ['Vales descontados no período',money(p.summary.ws_vales_applied_cents)]
  ];
  if(p.role==='ws'||p.role==='admin')metrics.push(
   ['Custos de recuperação',money(p.summary.recovery_cost_sales_month_cents)],
