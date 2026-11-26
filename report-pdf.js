@@ -70,6 +70,8 @@ function summaryPages(p){
   ['Despesas da Power no período',money(p.summary.power_expenses_cents)]
  );
  metrics.push(['Saldo pendente hoje (total)',money(p.summary.power_pending_total_now_cents)]);
+ metrics.push(['Conciliações em aberto',String(p.summary.financial_reviews_pending_count||0)]);
+ metrics.push(['Pagamentos anteriores a conferir',money(p.summary.financial_reviews_pending_paid_cents)]);
  let y=268;
  for(let i=0;i<metrics.length;i++){
   const col=i%2, row=Math.floor(i/2);
@@ -85,6 +87,7 @@ function summaryPages(p){
   '• Pagamentos à Power pelo dia efetivo do acerto.',
   '• Despesas por sua data de realização, separadas por empresa.',
   '• Vendas canceladas não entram nos totais operacionais.',
+  '• Pagamentos de vendas canceladas permanecem históricos até conciliação.',
   '• Saldo pendente hoje inclui todos os períodos, não só o selecionado.',
   '• Lucro WS é estimativa operacional, não resultado contábil.'
  ];
